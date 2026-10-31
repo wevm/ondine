@@ -52,6 +52,7 @@ Read github.com/wevm/ondine and help me render my Mermaid diagrams with Ondine.
 - [**Node Compiler**](site/src/content/docs/guides/node.mdx): `ondine/compiler` renders source to SVG in scripts and servers.
 - [**Markdown and MDX**](site/src/content/docs/api/remark.mdx): `ondine/remark` replaces ` ```mermaid ` fences with compiled SVG.
 - [**In-Browser Compilation**](site/src/content/docs/guides/browser.mdx): opt-in `ondine/compiler/wasm` modules, one per diagram type or `all`.
+- [**Swift Package**](site/src/content/docs/guides/swift.mdx): the same modules render in native apps on macOS, iOS, and Linux through WasmKit.
 - [**GitHub Images**](site/src/content/docs/guides/github.mdx): an image Worker renders diagrams encoded in a URL for READMEs.
 - [**Theming**](site/src/content/docs/guides/theming.mdx): `--ondine-*` CSS custom properties switch schemes without compiling again.
 - [**Mounting**](site/src/content/docs/guides/mounting.mdx): `mount` inserts precompiled SVG without downloading a parser or layout code.
