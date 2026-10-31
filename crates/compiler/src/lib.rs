@@ -24,6 +24,7 @@ mod svg {
     pub(crate) mod builder;
     pub(crate) mod cluster;
     pub(crate) mod edges;
+    pub(crate) mod resolve;
     pub(crate) mod root;
     pub(crate) mod shapes;
     pub(crate) mod theme;
@@ -182,7 +183,10 @@ pub fn render(source: &str, options: &str, now: f64) -> Result<Rendered, Error> 
                 internal: link.internal,
             })
             .collect(),
-        svg: drawn.svg,
+        svg: match &options.theme {
+            Some(theme) => svg::resolve::resolve(&drawn.svg, theme),
+            None => drawn.svg,
+        },
         r#type,
         width: drawn.width,
     };
@@ -230,6 +234,39 @@ fn exceeds(text: &str, limit: f64) -> bool {
         .map(|byte| usize::from(byte & 0xc0 != 0x80) + usize::from(byte >= 0xf0))
         .sum::<usize>();
     units as f64 > limit
+}
+
+/// Reads the `theme` option: an object of `--ondine-*` property names in camel case, without the
+/// prefix, and their values. Keys become full property names, so `surfaceAlt` sets
+/// `--ondine-surface-alt` and `series1` sets `--ondine-series-1`. A value that is not a string, or
+/// that an author style could not hold, is ignored, so its property keeps its default.
+fn theme(value: &yaml::Value) -> Option<Vec<(String, String)>> {
+    let yaml::Value::Object(entries) = value else {
+        return None;
+    };
+
+    let mut theme = Vec::with_capacity(entries.len());
+    for (key, value) in entries {
+        let yaml::Value::String(value) = value else {
+            continue;
+        };
+        let value = value.trim();
+        if value.is_empty() || svg::theme::unsafe_value(value) {
+            continue;
+        }
+
+        let mut name = String::from("--ondine-");
+        let mut digits = false;
+        for c in key.chars() {
+            if c.is_ascii_uppercase() || (c.is_ascii_digit() && !digits) {
+                name.push('-');
+            }
+            name.push(c.to_ascii_lowercase());
+            digits = c.is_ascii_digit();
+        }
+        theme.push((name, svg::builder::esc(value).into_owned()));
+    }
+    Some(theme)
 }
 
 /// Reads host options from JSON. Unknown fields are ignored, as in Pele.
@@ -287,6 +324,7 @@ fn options_from_json(json: &str) -> Result<svg::root::RenderOptions, Error> {
             "outputLimit" => options.output_limit = number(value),
             "padding" => options.padding = number(value),
             "responsive" => options.responsive = boolean(value),
+            "theme" => options.theme = theme(value),
             _ => {}
         }
     }
