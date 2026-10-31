@@ -170,6 +170,8 @@ pub fn render(source: &str, options: &str, now: f64) -> Result<Rendered, Error> 
         links: options.links,
     };
 
+    // Widths read the host's advance table until this render returns, on success or error.
+    let _metrics = text::measure::scope(options.text_metrics.take());
     let drawn = (diagram.render)(&input, &options, &url)?;
     let mut rendered = Rendered {
         height: drawn.height,
@@ -287,9 +289,57 @@ fn options_from_json(json: &str) -> Result<svg::root::RenderOptions, Error> {
             "outputLimit" => options.output_limit = number(value),
             "padding" => options.padding = number(value),
             "responsive" => options.responsive = boolean(value),
+            "textMetrics" => options.text_metrics = text_metrics(value),
             _ => {}
         }
     }
 
     Ok(options)
+}
+
+/// Reads a `textMetrics` option. A table with the wrong length, or an advance that is not a finite,
+/// non-negative number, ignores the whole option, as other options ignore values of the wrong type.
+fn text_metrics(value: &yaml::Value) -> Option<Box<text::measure::Metrics>> {
+    let yaml::Value::Object(entries) = value else {
+        return None;
+    };
+
+    let advance = |value: &yaml::Value| match value {
+        yaml::Value::Number(n) if n.is_finite() && *n >= 0.0 => Some(*n),
+        _ => None,
+    };
+    let table = |value: &yaml::Value| {
+        let yaml::Value::Array(items) = value else {
+            return None;
+        };
+        if items.len() != text::measure::ASCII {
+            return None;
+        }
+
+        let mut advances = [0.0; text::measure::ASCII];
+        for (slot, item) in advances.iter_mut().zip(items) {
+            *slot = advance(item)?;
+        }
+        Some(advances)
+    };
+
+    let mut advances = None;
+    let mut metrics = text::measure::Metrics {
+        advances: [0.0; text::measure::ASCII],
+        bold: None,
+        other: 600.0,
+        wide: 1200.0,
+    };
+    for (key, value) in entries {
+        match key.as_str() {
+            "advances" => advances = Some(table(value)?),
+            "bold" => metrics.bold = Some(table(value)?),
+            "other" => metrics.other = advance(value)?,
+            "wide" => metrics.wide = advance(value)?,
+            _ => {}
+        }
+    }
+
+    metrics.advances = advances?;
+    Some(Box::new(metrics))
 }

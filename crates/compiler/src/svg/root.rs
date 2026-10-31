@@ -7,8 +7,8 @@ use crate::svg::theme::{RADIUS, ROOT_STYLE, ROUNDED, font_style};
 use crate::yaml::push_number;
 
 /// The host's options that the shared SVG modules read. A subset of Pele's `RenderOptions`;
-/// diagram modules add the fields they read as they are ported. Ondine has no font options, since
-/// fonts come from `--ondine-font` and every width is monospace.
+/// diagram modules add the fields they read as they are ported. Fonts come from `--ondine-font`,
+/// and every width is monospace unless the host supplies `text_metrics`.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RenderOptions {
     /// Whether a diagram that runs across may be drawn running down when it does not fit
@@ -46,6 +46,9 @@ pub(crate) struct RenderOptions {
     pub(crate) padding: Option<f64>,
     /// Whether the document scales down to its container. On unless `Some(false)`.
     pub(crate) responsive: Option<bool>,
+    /// Advances of the host's font, which `render` installs for text measurement. Uniform
+    /// monospace advances when absent.
+    pub(crate) text_metrics: Option<Box<crate::text::measure::Metrics>>,
 }
 
 /// A diagram's accessible title and description.

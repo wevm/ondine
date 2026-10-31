@@ -129,6 +129,13 @@ export declare namespace render {
     readonly padding?: number | undefined
     /** Whether the SVG scales to its container. Defaults to `true`. */
     readonly responsive?: boolean | undefined
+    /**
+     * Glyph advances of the font that draws labels, for layout with a proportional font. Set
+     * `--ondine-font` to the same font. Each character advances 0.6 em when absent. The compiler
+     * ignores the whole option when a table does not have 95 entries or an advance is not a finite,
+     * non-negative number.
+     */
+    readonly textMetrics?: TextMetrics | undefined
   }
 
   /** A rendered diagram. */
@@ -143,6 +150,18 @@ export declare namespace render {
     readonly type: string
     /** Width in pixels. */
     readonly width: number
+  }
+
+  /** Glyph advances in thousandths of an em, as a font's `advanceWidth / unitsPerEm * 1000`. */
+  type TextMetrics = {
+    /** Advances of printable ASCII (U+0020 to U+007E) in code point order. Exactly 95 entries. */
+    readonly advances: readonly number[]
+    /** Advances of printable ASCII in bold text, with 95 entries. Bold text reads `advances` when absent. */
+    readonly bold?: readonly number[] | undefined
+    /** Advance of every other character that is not wide or zero-width. Defaults to `600`. */
+    readonly other?: number | undefined
+    /** Advance of a wide (East Asian or emoji) character. Defaults to `1200`. */
+    readonly wide?: number | undefined
   }
 }
 
