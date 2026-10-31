@@ -8,6 +8,7 @@
  *
  * `GET /<payload>.png` and `GET /png?source=<source>` draw the diagram on a 1200x630 PNG card. Link
  * previewers that request an SVG address receive an HTML page whose `og:image` is that card.
+ * `?size=full` draws the PNG at the diagram's own size instead, in the light or `?scheme=dark` scheme.
  * @module
  */
 import { Render, RenderError } from 'ondine/compiler/wasm'
@@ -62,6 +63,9 @@ export async function respond(request: Request, options: respond.Options = {}): 
   const format = path === 'svg' && options.preview ? 'png' : path
 
   const scheme = url.searchParams.get('scheme')
+  const full = isFull(url)
+  const raster = (svg: string) =>
+    full ? Card.full(svg, { scheme: scheme === 'dark' ? 'dark' : 'light' }) : Card.png(svg)
   const style = (() => {
     // `color-scheme` paints a matching canvas behind an image that a browser opens on its own.
     if (scheme === 'dark') return `:root{color-scheme:dark;${schemes.dark}}`
@@ -91,14 +95,14 @@ export async function respond(request: Request, options: respond.Options = {}): 
 
     if (format === 'png')
       return cached(new Request(png(url), request), async () =>
-        image(await Card.png(svg), { 'cache-control': cache }),
+        image(await raster(svg), { 'cache-control': cache }),
       )
     return image(theme(svg, style), { 'cache-control': cache, vary: 'User-Agent' })
   } catch (error) {
     if (!(error instanceof PayloadError || error instanceof RenderError)) throw error
 
     const headers = { 'cache-control': 'public, max-age=300' }
-    if (format === 'png') return image(await Card.png(card(error.message)), headers, 400)
+    if (format === 'png') return image(await raster(card(error.message)), headers, 400)
     return image(theme(card(error.message), style), { ...headers, vary: 'User-Agent' }, 400)
   }
 }
@@ -127,11 +131,19 @@ async function cached(request: Request, fn: () => Promise<Response>): Promise<Re
   return response
 }
 
-/** Returns the PNG card address for the diagram at `url`. Cards ignore the scheme. */
+/** Whether `url` asks for a full-size PNG. SVG addresses, even when previewed as PNG, draw the card. */
+function isFull(url: URL): boolean {
+  return url.pathname.endsWith('png') && url.searchParams.get('size') === 'full'
+}
+
+/** Returns the PNG address for the diagram at `url`. Cards ignore the scheme, and full-size images keep it. */
 function png(url: URL): URL {
   const card = new URL(url)
   card.pathname = url.pathname.replace(/svg$/, 'png')
+  if (isFull(url)) return card
+
   card.searchParams.delete('scheme')
+  card.searchParams.delete('size')
   return card
 }
 
