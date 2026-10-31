@@ -28,7 +28,7 @@ export class RenderError extends Error {
 
 export declare namespace RenderError {
   /** The kind of failure. */
-  type Code = 'limit' | 'semantic' | 'syntax' | 'unsupported-diagram'
+  type Code = 'limit' | 'semantic' | 'syntax' | 'unsupported' | 'unsupported-diagram'
 
   /** Constructor fields. */
   type Options = {
@@ -129,6 +129,17 @@ export declare namespace render {
     readonly padding?: number | undefined
     /** Whether the SVG scales to its container. Defaults to `true`. */
     readonly responsive?: boolean | undefined
+    /**
+     * Writes the theme into the SVG as literal values instead of CSS custom properties.
+     *
+     * The output has no `var()` or `color-mix()`, so renderers without them draw it, such as resvg,
+     * librsvg, and native SVG parsers. Properties without a value keep their defaults, and an
+     * empty object writes the default theme. The SVG then ignores `--ondine-*` properties on the page.
+     *
+     * Only the speed-optimized module of `ondine/compiler` and `ondine/compiler/wasm/all.fast.wasm`
+     * supports this option. Other modules throw a {@link RenderError} with the code `unsupported`.
+     */
+    readonly theme?: Theme | undefined
   }
 
   /** A rendered diagram. */
@@ -143,6 +154,63 @@ export declare namespace render {
     readonly type: string
     /** Width in pixels. */
     readonly width: number
+  }
+
+  /**
+   * Values for the `--ondine-*` properties that the `theme` option writes into the SVG. Each key is
+   * a property name without its prefix, in camel case. Values are CSS values.
+   *
+   * Default shades mix the foreground and background. A color in a mix must be a hex, named,
+   * `rgb()`, `rgba()`, or `transparent` color. If a mix reads a value in another form, such as
+   * `hsl()`, the render throws a {@link RenderError} with the code `unsupported` that names its key.
+   */
+  type Theme = {
+    /** `--ondine-accent`: highlighted elements. Defaults to `fg`. */
+    readonly accent?: string | undefined
+    /** `--ondine-bg`: the background, and the default for fills. Defaults to `#fff`. */
+    readonly bg?: string | undefined
+    /** `--ondine-bold-weight`: the font weight of bold labels. Defaults to `bold`. */
+    readonly boldWeight?: string | undefined
+    /** `--ondine-border`: shape outlines. Defaults to `fg`. */
+    readonly border?: string | undefined
+    /** `--ondine-critical`: elements that a diagram marks as critical. Defaults to `fg`. */
+    readonly critical?: string | undefined
+    /** `--ondine-fg`: text, and the default for lines and borders. Defaults to `#000`. */
+    readonly fg?: string | undefined
+    /** `--ondine-font`: the label font stack. Defaults to a monospace stack. */
+    readonly font?: string | undefined
+    /** `--ondine-heading-weight`: the font weight of section and group headings. Defaults to `bold`. */
+    readonly headingWeight?: string | undefined
+    /** `--ondine-line`: edges and connectors. Defaults to `fg`. */
+    readonly line?: string | undefined
+    /** `--ondine-muted`: secondary text. Defaults to `fg`. */
+    readonly muted?: string | undefined
+    /** `--ondine-radius`: the corner radius of rectangles. Defaults to `0`. */
+    readonly radius?: string | undefined
+    /** `--ondine-series-1`: the first chart series. Defaults to a shade of `fg`. */
+    readonly series1?: string | undefined
+    /** `--ondine-series-2`: the second chart series. Defaults to a shade of `fg`. */
+    readonly series2?: string | undefined
+    /** `--ondine-series-3`: the third chart series. Defaults to a shade of `fg`. */
+    readonly series3?: string | undefined
+    /** `--ondine-series-4`: the fourth chart series. Defaults to a shade of `fg`. */
+    readonly series4?: string | undefined
+    /** `--ondine-series-5`: the fifth chart series. Defaults to a shade of `fg`. */
+    readonly series5?: string | undefined
+    /** `--ondine-series-6`: the sixth chart series. Defaults to a shade of `fg`. */
+    readonly series6?: string | undefined
+    /** `--ondine-series-7`: the seventh chart series. Defaults to a shade of `fg`. */
+    readonly series7?: string | undefined
+    /** `--ondine-series-8`: the eighth chart series. Defaults to a shade of `fg`. */
+    readonly series8?: string | undefined
+    /** `--ondine-stroke`: the width of outlines and edges. Defaults to `2px`. */
+    readonly stroke?: string | undefined
+    /** `--ondine-surface`: node fills. Defaults to `bg`. */
+    readonly surface?: string | undefined
+    /** `--ondine-surface-alt`: cluster fills, grids, and finished work. Defaults to 20% `fg`. */
+    readonly surfaceAlt?: string | undefined
+    /** `--ondine-title-weight`: the font weight of diagram titles. Defaults to `bold`. */
+    readonly titleWeight?: string | undefined
   }
 }
 

@@ -9,6 +9,8 @@ pub enum Code {
     Semantic,
     /// The source does not match the diagram's grammar.
     Syntax,
+    /// The options ask for something that this compiler module does not support.
+    Unsupported,
     /// No supported diagram type was detected.
     UnsupportedDiagram,
 }
@@ -20,6 +22,7 @@ impl Code {
             Self::Limit => "limit",
             Self::Semantic => "semantic",
             Self::Syntax => "syntax",
+            Self::Unsupported => "unsupported",
             Self::UnsupportedDiagram => "unsupported-diagram",
         }
     }

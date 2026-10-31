@@ -28,7 +28,7 @@ class RenderError extends Error
 
 ### code
 
-- **Type:** `'limit' | 'semantic' | 'syntax' | 'unsupported-diagram'{:ts}`
+- **Type:** `'limit' | 'semantic' | 'syntax' | 'unsupported' | 'unsupported-diagram'{:ts}`
 
 The kind of failure.
 
@@ -37,6 +37,7 @@ The kind of failure.
 | `limit`               | The source, edge count, or output exceeds a `render` limit.                        |
 | `semantic`            | The source parses but describes an invalid diagram, such as an invalid gantt date. |
 | `syntax`              | The source does not parse.                                                         |
+| `unsupported`         | The module does not support the `theme` option, or a mix cannot read its color.    |
 | `unsupported-diagram` | No diagram type is detected, or the type is not ported yet.                        |
 
 ```ts

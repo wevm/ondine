@@ -188,6 +188,23 @@ A diagram in an image cannot read the styles of the page. Thus the [image Worker
 ![Flow](https://ondine.sh/eJxLy8kvT85ILCpR8AniUlBwVNDVtVNwAgBUvQYu.svg?scheme=dark)
 ```
 
+### Inline the Theme
+
+Some SVG renderers have no CSS custom properties or `color-mix()`. Examples are resvg, librsvg, and the SVG parsers of native apps. The `theme` option of [`render`](/docs/api/compiler/render) writes each property value into the SVG instead.
+
+```ts title="png.ts"
+import { render } from 'ondine/compiler'
+
+// Writes the dark scheme into the SVG as hex colors
+const { svg } = render('flowchart LR\n  A --> B', {
+  theme: { bg: '#000', fg: '#fff' },
+})
+```
+
+Keys are the property names without the `--ondine-` prefix, in camel case, such as `surfaceAlt` and `series1`. The SVG then ignores `--ondine-*` properties on the page. Thus a new scheme needs a new render.
+
+Default shades mix `fg` into `bg`. A color in a mix must be a hex, named, `rgb()`, `rgba()`, or `transparent` color, or the render throws. Browser modules leave the option out for size, so it needs `ondine/compiler`.
+
 ## More
 
 <Cards>

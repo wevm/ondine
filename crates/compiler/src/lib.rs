@@ -24,6 +24,8 @@ mod svg {
     pub(crate) mod builder;
     pub(crate) mod cluster;
     pub(crate) mod edges;
+    #[cfg(feature = "theme")]
+    pub(crate) mod resolve;
     pub(crate) mod root;
     pub(crate) mod shapes;
     pub(crate) mod theme;
@@ -171,6 +173,13 @@ pub fn render(source: &str, options: &str, now: f64) -> Result<Rendered, Error> 
     };
 
     let drawn = (diagram.render)(&input, &options, &url)?;
+    #[cfg(feature = "theme")]
+    let document = match &options.theme {
+        Some(theme) => svg::resolve::resolve(&drawn.svg, theme)?,
+        None => drawn.svg,
+    };
+    #[cfg(not(feature = "theme"))]
+    let document = drawn.svg;
     let mut rendered = Rendered {
         height: drawn.height,
         links: drawn
@@ -182,7 +191,7 @@ pub fn render(source: &str, options: &str, now: f64) -> Result<Rendered, Error> 
                 internal: link.internal,
             })
             .collect(),
-        svg: drawn.svg,
+        svg: document,
         r#type,
         width: drawn.width,
     };
@@ -287,6 +296,15 @@ fn options_from_json(json: &str) -> Result<svg::root::RenderOptions, Error> {
             "outputLimit" => options.output_limit = number(value),
             "padding" => options.padding = number(value),
             "responsive" => options.responsive = boolean(value),
+            #[cfg(feature = "theme")]
+            "theme" => options.theme = svg::resolve::properties(value),
+            #[cfg(not(feature = "theme"))]
+            "theme" => {
+                return Err(Error::new(
+                    Code::Unsupported,
+                    "This module does not support the theme option. Use ondine/compiler.",
+                ));
+            }
             _ => {}
         }
     }

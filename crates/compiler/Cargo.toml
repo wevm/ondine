@@ -9,7 +9,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["all"]
+default = ["all", "theme"]
 # Every diagram type, for native builds and tests.
 all = [
   "agentflow",
@@ -82,6 +82,9 @@ wardley = []
 xychart = []
 # Serializes parsed models as JSON for parity tests. Release modules leave it out.
 model = []
+# Writes the `theme` render option into the SVG as literal values. Only the speed-optimized `all`
+# module includes it, so the size-optimized browser modules leave out the resolve pass.
+theme = []
 
 [dev-dependencies]
 insta.workspace = true
