@@ -28,7 +28,7 @@ export class RenderError extends Error {
 
 export declare namespace RenderError {
   /** The kind of failure. */
-  type Code = 'limit' | 'semantic' | 'syntax' | 'unsupported-diagram'
+  type Code = 'limit' | 'semantic' | 'syntax' | 'unsupported' | 'unsupported-diagram'
 
   /** Constructor fields. */
   type Options = {
@@ -135,6 +135,9 @@ export declare namespace render {
      * The output has no `var()` or `color-mix()`, so renderers without them draw it, such as resvg,
      * librsvg, and native SVG parsers. Properties without a value keep their defaults, and an
      * empty object writes the default theme. The SVG then ignores `--ondine-*` properties on the page.
+     *
+     * Only the speed-optimized module of `ondine/compiler` and `ondine/compiler/wasm/all.fast.wasm`
+     * supports this option. Other modules throw a {@link RenderError} with the code `unsupported`.
      */
     readonly theme?: Theme | undefined
   }
@@ -155,9 +158,11 @@ export declare namespace render {
 
   /**
    * Values for the `--ondine-*` properties that the `theme` option writes into the SVG. Each key is
-   * a property name without its prefix, in camel case. Values are CSS values. Default shades mix
-   * the foreground and background, so `bg` and `fg` take hex or `transparent` colors. A
-   * mix of other colors takes its first color.
+   * a property name without its prefix, in camel case. Values are CSS values.
+   *
+   * Default shades mix the foreground and background. A color in a mix must be a hex, named,
+   * `rgb()`, `rgba()`, or `transparent` color. If a mix reads a value in another form, such as
+   * `hsl()`, the render throws a {@link RenderError} with the code `unsupported` that names its key.
    */
   type Theme = {
     /** `--ondine-accent`: highlighted elements. Defaults to `fg`. */

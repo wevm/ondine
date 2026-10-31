@@ -199,7 +199,7 @@ Writes the theme into the SVG as literal values. The output has no `var()` or `c
 
 Each key is an `--ondine-*` property name without its prefix, in camel case: `accent`, `bg`, `boldWeight`, `border`, `critical`, `fg`, `font`, `headingWeight`, `line`, `muted`, `radius`, `series1` to `series8`, `stroke`, `surface`, `surfaceAlt`, and `titleWeight`. A property without a key keeps its [default](/docs/guides/theming). An empty object writes the default theme.
 
-Default shades mix `fg` into `bg`. Give these two as hex or `transparent` colors, and the compiler writes each shade as a hex color. The SVG then ignores `--ondine-*` properties on the page, so a new theme needs a new render.
+Default shades mix `fg` into `bg`, and the compiler writes each shade as a hex color. A color in a mix must be a hex, named, `rgb()`, `rgba()`, or `transparent` color. The SVG then ignores `--ondine-*` properties on the page, so a new theme needs a new render.
 
 ```ts
 import { render } from 'ondine/compiler'
@@ -279,7 +279,9 @@ const { width } = render('flowchart LR\n  A --> B')
 
 ### RenderError
 
-If `render` cannot render the source, it throws a `RenderError`. The error `code` is `limit`, `semantic`, `syntax`, or `unsupported-diagram`. See [`RenderError`](/docs/api/compiler/RenderError).
+If `render` cannot render the source, it throws a `RenderError`. The error `code` is `limit`, `semantic`, `syntax`, `unsupported`, or `unsupported-diagram`. See [`RenderError`](/docs/api/compiler/RenderError).
+
+The code is `unsupported` if a mix reads a `theme` color in another form, such as `hsl()` or `oklch()`. The message names the key.
 
 ```ts
 import { render, RenderError } from 'ondine/compiler'

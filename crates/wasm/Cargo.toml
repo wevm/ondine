@@ -49,6 +49,7 @@ venn = ["compiler/venn"]
 wardley = ["compiler/wardley"]
 xychart = ["compiler/xychart"]
 model = ["compiler/model"]
+theme = ["compiler/theme"]
 
 [dependencies]
 compiler.workspace = true

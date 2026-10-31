@@ -1,5 +1,6 @@
 //! Renders diagrams with the `theme` option, which writes the theme into the SVG as literal
 //! values for renderers without CSS custom properties or `color-mix()`.
+#![cfg(feature = "theme")]
 
 use std::fmt::Write;
 
@@ -85,9 +86,12 @@ fn render_mixes_host_colors() {
         "#36c",
         "#33669980",
         "rgb(51 102 153)",
+        "rgb(51 102 153 / 50%)",
         "rgba(51, 102, 153, 0.5)",
+        "RGB(20%, 40%, 60%)",
         "transparent",
-        "red",
+        "rebeccapurple",
+        "Red",
         "url(#x)",
     ] {
         let options = format!(r##"{{"theme":{{"bg":"#ffffff","fg":"{fg}"}}}}"##);
@@ -100,10 +104,13 @@ fn render_mixes_host_colors() {
     #336699: #336699
     #36c: #3366cc
     #33669980: #33669980
-    rgb(51 102 153): rgb(51 102 153)
-    rgba(51, 102, 153, 0.5): rgba(51, 102, 153, 0.5)
+    rgb(51 102 153): #336699
+    rgb(51 102 153 / 50%): #33669980
+    rgba(51, 102, 153, 0.5): #33669980
+    RGB(20%, 40%, 60%): #336699
     transparent: #00000000
-    red: red
+    rebeccapurple: #663399
+    Red: #ff0000
     url(#x): #000000
     ");
 }
@@ -119,7 +126,6 @@ fn render_normalizes_mix_percentages() {
         "color-mix(in srgb, #ff0000, #0000ff 25%)",
         "color-mix(in srgb, #ff000000 50%, #0000ff)",
         "color-mix(in srgb, color-mix(in srgb, #000 50%, #fff) 50%, #fff)",
-        "color-mix(in oklch, #ff0000 50%, #0000ff)",
     ] {
         let options = format!(r#"{{"theme":{{"surfaceAlt":"{alt}"}}}}"#);
         let svg = svg(source, &options);
@@ -137,7 +143,39 @@ fn render_normalizes_mix_percentages() {
     color-mix(in srgb, #ff0000, #0000ff): #800080
     color-mix(in srgb, #ff0000, #0000ff 25%): #bf0040
     color-mix(in srgb, #ff000000 50%, #0000ff): #0000ff80
-    color-mix(in srgb, color-mix(in srgb, #000 50%, #fff) 50%, #fff): #c0c0c0
-    color-mix(in oklch, #ff0000 50%, #0000ff): #ff0000
+    color-mix(in srgb, color-mix(in srgb, #000 50%, #fff) 50%, #fff): #bfbfbf
     ");
+}
+
+#[test]
+fn render_rejects_unmixable_host_colors() {
+    let source = "flowchart TD\n  subgraph S\n    A\n  end";
+    let mut report = String::new();
+    for theme in [
+        r#"{"fg":"hsl(210 50% 40%)"}"#,
+        r##"{"bg":"#fff","fg":"oklch(0.5 0.1 250)"}"##,
+        r#"{"fg":"currentColor"}"#,
+        r#"{"surfaceAlt":"color-mix(in oklch, #f00 50%, #00f)"}"#,
+        r#"{"surfaceAlt":"color-mix(in srgb, #f00 50%, hsl(0 0% 0%))"}"#,
+    ] {
+        let options = format!(r#"{{"theme":{theme}}}"#);
+        let error = compiler::render(source, &options, 0.0).expect_err("the theme is rejected");
+        writeln!(report, "{theme}: {} {}", error.code.as_str(), error.message)
+            .expect("the report is a string");
+    }
+
+    insta::assert_snapshot!(report, @r##"
+    {"fg":"hsl(210 50% 40%)"}: unsupported The theme value for "fg" cannot be mixed. Use a hex, named, rgb(), or transparent color.
+    {"bg":"#fff","fg":"oklch(0.5 0.1 250)"}: unsupported The theme value for "fg" cannot be mixed. Use a hex, named, rgb(), or transparent color.
+    {"fg":"currentColor"}: unsupported The theme value for "fg" cannot be mixed. Use a hex, named, rgb(), or transparent color.
+    {"surfaceAlt":"color-mix(in oklch, #f00 50%, #00f)"}: unsupported The theme value for "surfaceAlt" cannot be mixed. Use a hex, named, rgb(), or transparent color.
+    {"surfaceAlt":"color-mix(in srgb, #f00 50%, hsl(0 0% 0%))"}: unsupported The theme value for "surfaceAlt" cannot be mixed. Use a hex, named, rgb(), or transparent color.
+    "##);
+}
+
+#[test]
+fn render_keeps_unmixed_host_colors() {
+    let options = r##"{"theme":{"border":"hsl(210 50% 40%)","fg":"#000"}}"##;
+
+    insta::assert_snapshot!(attribute(&svg("flowchart LR\n  A", options), "ondine-node", "stroke"), @"hsl(210 50% 40%)");
 }

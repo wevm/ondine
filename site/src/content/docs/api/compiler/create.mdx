@@ -72,3 +72,5 @@ create({ modules: {} }).render('flowchart LR\n  A --> B')
 ### RenderError
 
 If `render` cannot render the source, it throws a [`RenderError`](/docs/api/compiler/RenderError). This also applies if no supplied module contains the diagram type of the source.
+
+The size-optimized modules leave out the `theme` option. With `theme`, they throw a `RenderError` with the code `unsupported`. Supply `ondine/compiler/wasm/all.fast.wasm` to use it.

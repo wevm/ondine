@@ -203,6 +203,8 @@ const { svg } = render('flowchart LR\n  A --> B', {
 
 Keys are the property names without the `--ondine-` prefix, in camel case, such as `surfaceAlt` and `series1`. The SVG then ignores `--ondine-*` properties on the page. Thus a new scheme needs a new render.
 
+Default shades mix `fg` into `bg`. A color in a mix must be a hex, named, `rgb()`, `rgba()`, or `transparent` color, or the render throws. Browser modules leave the option out for size, so it needs `ondine/compiler`.
+
 ## More
 
 <Cards>

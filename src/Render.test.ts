@@ -31,6 +31,14 @@ describe('render', () => {
     )
   })
 
+  test('rejects a theme color that a mix cannot read', () => {
+    expect(() =>
+      render('pie\n  "A" : 3', { theme: { fg: 'hsl(0 0% 0%)' } }),
+    ).toThrowErrorMatchingInlineSnapshot(
+      `[Render.RenderError: The theme value for "fg" cannot be mixed. Use a hex, named, rgb(), or transparent color.]`,
+    )
+  })
+
   test('writes the theme into every vector', () => {
     const themed = Vectors.types().flatMap((type) =>
       Vectors.of(type).flatMap((vector) => {
@@ -69,5 +77,27 @@ describe('create', () => {
     expect(() => renderer.render('not a diagram')).toThrowErrorMatchingInlineSnapshot(
       `[Render.RenderError: No diagram type detected for the given text.]`,
     )
+  })
+
+  test('rejects the theme option in a size-optimized module', () => {
+    const module = new WebAssembly.Module(
+      Fs.readFileSync(new URL('./internal/flowchart.generated.wasm', import.meta.url)),
+    )
+    const renderer = Render.create({ modules: { flowchart: module } })
+
+    const error = (() => {
+      try {
+        renderer.render('flowchart LR\n  A --> B', { theme: {} })
+      } catch (error) {
+        if (error instanceof RenderError) return error
+        throw error
+      }
+      return undefined
+    })()
+
+    expect(error).toMatchInlineSnapshot(
+      `[Render.RenderError: This module does not support the theme option. Use ondine/compiler.]`,
+    )
+    expect(error?.code).toMatchInlineSnapshot(`"unsupported"`)
   })
 })
