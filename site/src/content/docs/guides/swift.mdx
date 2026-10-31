@@ -39,7 +39,7 @@ dependencies: [
 
 ### Bundle the Module
 
-The package contains no WebAssembly. Copy `all.generated.wasm` from `node_modules/ondine/dist/internal/` into the target as a resource. The module holds every diagram type.
+The package contains no WebAssembly. Copy `all.generated.wasm` from `node_modules/ondine/dist/internal/` into the target as a resource. `Ondine.Compiler` takes this one module, which holds every diagram type.
 
 ```swift title="Package.swift"
 // Copies the module into the bundle of the target
@@ -99,7 +99,7 @@ After `fuelExhausted` or `trap`, the next render uses a fresh instance of the mo
 | `autoDirection`       | `Bool?`   | Draws a diagram that runs across running down when it does not fit `maxWidth`. Defaults to `true`. |
 | `directionBreakpoint` | `Double?` | The width under which `autoDirection` turns a diagram. Defaults to `640`.                          |
 | `fontSize`            | `Double?` | Font size in pixels. Defaults to `16`.                                                             |
-| `fuel`                | `UInt64`  | The most WebAssembly fuel one render may use. Defaults to `Options.defaultFuel`.                   |
+| `fuel`                | `UInt64`  | The most WebAssembly fuel one render may use. Defaults to `Options.defaultFuel`, one billion.      |
 | `idPrefix`            | `String?` | Prefix for element IDs, to keep several diagrams on one page apart.                                |
 | `limit`               | `Int?`    | The most characters of source to accept. Defaults to `50000`.                                      |
 | `maxEdges`            | `Int?`    | The most edges a flowchart may have. Defaults to `5000`.                                           |
@@ -113,23 +113,22 @@ After `fuelExhausted` or `trap`, the next render uses a fresh instance of the mo
 
 ### Bound the Work
 
-WasmKit counts fuel, about one unit for each executed instruction. A render that uses all of `fuel` stops with `fuelExhausted`. A small budget keeps a pathological source from holding a thread.
+WasmKit counts fuel, about one unit for each executed instruction. A render that uses all of `fuel` stops with `fuelExhausted`, so a pathological source cannot hold a thread.
+
+`Options.defaultFuel` is one billion units, about one second of interpretation in an optimized build. Every sample diagram in the documentation uses less than ten million units. Raise `fuel` to render larger diagrams.
 
 ```swift title="Diagram.swift"
-// Stops after about ten million instructions
-let rendered = try compiler.render(source, options: .init(fuel: 10_000_000))
+// Allows about ten billion instructions for a very large diagram
+let rendered = try compiler.render(source, options: .init(fuel: 10_000_000_000))
 ```
 
 ### Load One Type
 
-If an app renders only one diagram type, bundle the module for that type, such as `flowchart.generated.wasm`. Pass several modules by type, as in `create`. The `all` module renders first when present.
+If an app renders only one diagram type, bundle the module for that type, such as `flowchart.generated.wasm`. The compiler then renders only that type. For other types, it throws a diagnostic with the `unsupportedDiagram` code.
 
 ```swift title="Diagram.swift"
-// Renders flowcharts and sequence diagrams, and throws a diagnostic for other types
-let compiler = try Ondine.Compiler(modules: [
-  "flowchart": Data(contentsOf: flowchart),
-  "sequence": Data(contentsOf: sequence),
-])
+// Renders flowcharts, and throws a diagnostic for other types
+let compiler = try Ondine.Compiler(module: Data(contentsOf: flowchart))
 ```
 
 ### Render in Parallel

@@ -3,55 +3,36 @@ import Synchronization
 import WasmKit
 
 extension Ondine {
-  /// Renders Mermaid source through caller-supplied WebAssembly modules.
+  /// Renders Mermaid source through a caller-supplied WebAssembly module.
   ///
-  /// Each module holds one diagram type, or `all` of them, as in `create` from
-  /// `ondine/compiler/wasm`. A compiler instantiates each module on first use and keeps the
+  /// The module is `all.generated.wasm` for every diagram type, or the module of one type, which
+  /// renders only that type. A compiler instantiates the module on first use and keeps the
   /// instance for later renders. After a trap, the next render uses a fresh instance.
   ///
   /// A compiler is `Sendable`. A lock serializes its renders, so concurrent calls on one compiler
   /// run one at a time. Create one compiler per thread to render in parallel.
   public final class Compiler: Sendable {
-    /// The diagram type of the module that renders first.
-    private let first: String
-    /// Parsed modules and their instances, behind the lock.
+    /// The parsed module and its instance, behind the lock.
     private let state: Mutex<State>
 
-    /// Creates a compiler from one module, such as `all.generated.wasm`.
+    /// Creates a compiler from one module.
     ///
-    /// - Parameter module: The bytes of an Ondine WebAssembly module.
+    /// - Parameter module: The bytes of an Ondine WebAssembly module, such as `all.generated.wasm`
+    ///   for every diagram type. The module of one type, such as `flowchart.generated.wasm`,
+    ///   renders only that type and throws an `unsupportedDiagram` diagnostic for others.
     /// - Throws: `RenderError.invalidModule` when the bytes are not a WebAssembly module.
-    public convenience init(module: Data) throws(RenderError) {
-      try self.init(modules: ["all": module])
-    }
-
-    /// Creates a compiler from modules by diagram type, such as `all` or `flowchart`.
-    ///
-    /// The `all` module renders first when present. Otherwise the first type in alphabetical
-    /// order renders first. If that module does not include the detected diagram type, the module
-    /// named after the type renders the source.
-    ///
-    /// - Parameter modules: The bytes of Ondine WebAssembly modules by diagram type.
-    /// - Throws: `RenderError.invalidModule` when `modules` is empty or holds bytes that are not
-    ///   a WebAssembly module.
-    public init(modules: [String: Data]) throws(RenderError) {
-      var parsed: [String: Module] = [:]
-      for (type, bytes) in modules {
-        do {
-          parsed[type] = try parseWasm(bytes: Array(bytes))
-        } catch {
-          throw .invalidModule("The \(type) module does not parse: \(error)")
-        }
+    public init(module: Data) throws(RenderError) {
+      let parsed: Module
+      do {
+        parsed = try parseWasm(bytes: Array(module))
+      } catch {
+        throw .invalidModule("The module does not parse: \(error)")
       }
 
-      guard let first = modules["all"] == nil ? modules.keys.sorted().first : "all" else {
-        throw .invalidModule("Ondine.Compiler needs at least one module.")
-      }
-      self.first = first
-      state = Mutex(State(modules: parsed))
+      state = Mutex(State(module: parsed))
     }
 
-    /// Renders `source`, choosing the module for its diagram type.
+    /// Renders `source` with the module.
     ///
     /// Rendering is CPU-bound and synchronous. Call it off the main thread for large diagrams.
     ///
@@ -61,7 +42,7 @@ extension Ondine {
     /// - Returns: The SVG document, its detected type, size, and links.
     /// - Throws: `RenderError.diagnostic` when the source cannot be rendered,
     ///   `RenderError.fuelExhausted` when the render uses all of `options.fuel`, and
-    ///   `RenderError.trap` or `RenderError.invalidModule` when a module fails.
+    ///   `RenderError.trap` or `RenderError.invalidModule` when the module fails.
     public func render(_ source: String, options: Options = .init()) throws(RenderError) -> Rendered {
       let input = Input(
         fuel: options.fuel,
@@ -70,18 +51,9 @@ extension Ondine {
         options: Array(options.json().utf8),
         source: Array(source.utf8)
       )
-      let first = first
 
       return try state.withLock { (state: inout State) throws(RenderError) -> Rendered in
-        let outcome = try state.render(type: first, input: input)
-
-        // A module reports the detected type when it does not include it.
-        if case .rejected(let diagnostic) = outcome, diagnostic.code == .unsupportedDiagram,
-          let type = diagnostic.type, type != first, state.modules[type] != nil
-        {
-          return try state.render(type: type, input: input).get()
-        }
-        return try outcome.get()
+        try state.render(input)
       }
     }
   }
@@ -95,30 +67,29 @@ private struct Input {
   let source: [UInt8]
 }
 
-/// Parsed modules and the instances made from them.
+/// The parsed module and the instance made from it.
 private struct State {
-  var instances: [String: Instance] = [:]
-  let modules: [String: Module]
+  var instance: Instance?
+  let module: Module
 
-  /// Renders `input` with the module for `type`, instantiating it on first use.
-  mutating func render(type: String, input: Input) throws(Ondine.RenderError) -> Outcome {
-    guard let module = modules[type] else {
-      throw .invalidModule("No module for the \(type) diagram type.")
-    }
-
-    let instance: Instance
-    if let found = instances[type] {
-      instance = found
+  /// Renders `input`, instantiating the module on first use.
+  mutating func render(_ input: Input) throws(Ondine.RenderError) -> Ondine.Rendered {
+    let current: Instance
+    if let instance {
+      current = instance
     } else {
-      instance = try Instance(module: module)
-      instances[type] = instance
+      current = try Instance(module: module)
+      instance = current
     }
 
     do throws(Ondine.RenderError) {
-      return try instance.render(input)
+      return try current.render(input)
+    } catch .diagnostic(let diagnostic) {
+      // The module returns a diagnostic without a trap, so the instance stays usable.
+      throw .diagnostic(diagnostic)
     } catch {
       // A trap can leave linear memory inconsistent, so the next render instantiates again.
-      instances[type] = nil
+      instance = nil
       throw error
     }
   }
@@ -157,7 +128,7 @@ private final class Instance {
   }
 
   /// Copies the source and options into linear memory, renders, and decodes the result.
-  func render(_ input: Input) throws(Ondine.RenderError) -> Outcome {
+  func render(_ input: Input) throws(Ondine.RenderError) -> Ondine.Rendered {
     store.fuel = Fuel(remaining: input.fuel)
 
     do {

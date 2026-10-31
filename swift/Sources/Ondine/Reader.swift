@@ -1,17 +1,3 @@
-/// The decoded result of one render.
-enum Outcome {
-  case rejected(Ondine.Diagnostic)
-  case rendered(Ondine.Rendered)
-
-  /// The rendered diagram, or the diagnostic thrown as `RenderError.diagnostic`.
-  func get() throws(Ondine.RenderError) -> Ondine.Rendered {
-    switch self {
-    case .rejected(let diagnostic): throw .diagnostic(diagnostic)
-    case .rendered(let rendered): return rendered
-    }
-  }
-}
-
 /// Decodes the result of the module's `render` export: a status byte, then fields that are each
 /// a little-endian `u32` length and its bytes.
 struct Reader {
@@ -22,8 +8,8 @@ struct Reader {
     self.bytes = bytes
   }
 
-  /// Decodes the result at the start of `bytes`.
-  mutating func decode() throws(Ondine.RenderError) -> Outcome {
+  /// Decodes the result at the start of `bytes`. A rejection throws `RenderError.diagnostic`.
+  mutating func decode() throws(Ondine.RenderError) -> Ondine.Rendered {
     guard let status = bytes.first else { throw malformed() }
     at = 1
 
@@ -36,7 +22,7 @@ struct Reader {
       let snippet = try text()
       let message = try text()
 
-      return .rejected(
+      throw .diagnostic(
         Ondine.Diagnostic(
           code: Ondine.Diagnostic.Code(rawValue: code),
           column: column,
@@ -61,7 +47,7 @@ struct Reader {
     }
     let svg = try text()
 
-    return .rendered(Ondine.Rendered(height: height, links: links, svg: svg, type: type, width: width))
+    return Ondine.Rendered(height: height, links: links, svg: svg, type: type, width: width)
   }
 
   /// The next field's bytes.

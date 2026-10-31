@@ -1,8 +1,8 @@
-/// Renders Mermaid source to monochrome SVG with caller-supplied Ondine WebAssembly modules.
+/// Renders Mermaid source to monochrome SVG with a caller-supplied Ondine WebAssembly module.
 ///
-/// The package mirrors `ondine/compiler/wasm`. The caller supplies the modules, such as
-/// `all.generated.wasm` from the npm package, and `Ondine.Compiler` renders source with them.
-/// WasmKit interprets the modules, so rendering needs no JIT and runs on iOS.
+/// The package mirrors `ondine/compiler/wasm`. The caller supplies a module, such as
+/// `all.generated.wasm` from the npm package, and `Ondine.Compiler` renders source with it.
+/// WasmKit interprets the module, so rendering needs no JIT and runs on iOS.
 ///
 /// ```swift
 /// // Renders a flowchart with the module for every diagram type

@@ -5,9 +5,10 @@ extension Ondine {
   ///
   /// A `nil` field uses the compiler's default. `fuel` and `now` are not sent as options.
   public struct Options: Equatable, Sendable {
-    /// The fuel budget when none is given. A typical diagram uses less than ten million units, and
-    /// a flowchart with 600 edges uses less than one billion.
-    public static let defaultFuel: UInt64 = 10_000_000_000
+    /// The fuel budget when none is given: one billion units. It stops a render after about one
+    /// second of interpretation in an optimized build. Every sample in `test/vectors/samples.json`
+    /// uses less than ten million units. Pass a larger `fuel` to render larger diagrams.
+    public static let defaultFuel: UInt64 = 1_000_000_000
 
     /// Lets a diagram that runs across be drawn running down when it does not fit `maxWidth`.
     /// Defaults to `true`.

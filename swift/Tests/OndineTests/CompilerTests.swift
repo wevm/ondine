@@ -2,13 +2,19 @@ import Foundation
 import Ondine
 import Testing
 
-/// `all.generated.wasm`, which `pnpm build:wasm` writes to `src/internal/`.
-private let module = URL(filePath: #filePath)
+/// The modules that `pnpm build:wasm` writes to `src/internal/`.
+private let modules = URL(filePath: #filePath)
   .deletingLastPathComponent()
-  .appending(path: "../../../src/internal/all.generated.wasm")
+  .appending(path: "../../../src/internal")
   .standardizedFileURL
 
-private let missing = "Run pnpm build:wasm to write src/internal/all.generated.wasm."
+/// `all.generated.wasm`, the module for every diagram type.
+private let module = modules.appending(path: "all.generated.wasm")
+
+/// `flowchart.generated.wasm`, the module for flowcharts only.
+private let flowchart = modules.appending(path: "flowchart.generated.wasm")
+
+private let missing = "Run pnpm build:wasm to write the modules to src/internal/."
 
 @Suite("Compiler.render", .enabled(if: FileManager.default.fileExists(atPath: module.path), Comment(rawValue: missing)))
 struct CompilerTests {
@@ -109,5 +115,27 @@ struct CompilerInitTests {
       guard case .invalidModule? = error as? Ondine.RenderError else { return false }
       return true
     }
+  }
+
+  @Test(
+    "renders only the type of a one-type module",
+    .enabled(if: FileManager.default.fileExists(atPath: flowchart.path), Comment(rawValue: missing))
+  )
+  func oneType() throws {
+    let compiler = try Ondine.Compiler(module: Data(contentsOf: flowchart))
+
+    #expect(try compiler.render("flowchart LR\n  A --> B").type == "flowchart")
+
+    let error = #expect(throws: Ondine.RenderError.self) {
+      try compiler.render("sequenceDiagram\n  A->>B: hi")
+    }
+
+    guard case .diagnostic(let diagnostic)? = error else {
+      Issue.record("Expected a diagnostic, got \(String(describing: error))")
+      return
+    }
+    // Values match create from ondine/compiler/wasm with only the flowchart module.
+    #expect(diagnostic.code == .unsupportedDiagram)
+    #expect(diagnostic.type == "sequence")
   }
 }
