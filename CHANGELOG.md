@@ -1,5 +1,11 @@
 # ondine
 
+## 0.0.4
+
+### Patch Changes
+
+- 0b589ec: Added Pele's copyright and license notice to the published `LICENSE`.
+
 ## 0.0.3
 
 ### Patch Changes
