@@ -9,3 +9,6 @@ test/oracles/*.generated.wasm
 bench/results
 .wrangler
 .bin-*
+.build
+.swiftpm
+Package.resolved
