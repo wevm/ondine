@@ -32,7 +32,7 @@ describe('render', () => {
     expect(bars).toMatchInlineSnapshot(`
       [
         "<g class="ondine-series ondine-bars" data-id="up" fill="var(--ondine-series-1,color-mix(in srgb,var(--_fg) 100%,var(--_bg)))"><rect x="78.27" y="203.2" width="202.86" height="173.2"/><rect x="368.07" y="116.6" width="202.86" height="259.8"/></g>",
-        "<g class="ondine-series ondine-bars" data-id="down" fill="var(--ondine-series-2,color-mix(in srgb,var(--_fg) 57%,var(--_bg)))"><rect x="78.27" y="376.4" width="202.86" height="86.6"/><rect x="368.07" y="30" width="202.86" height="85.6"/></g>",
+        "<g class="ondine-series ondine-bars" data-id="down" fill="var(--ondine-series-2,color-mix(in srgb,var(--_fg) 35%,var(--_bg)))"><rect x="78.27" y="376.4" width="202.86" height="86.6"/><rect x="368.07" y="30" width="202.86" height="85.6"/></g>",
       ]
     `)
     expect(totals).toMatchInlineSnapshot(

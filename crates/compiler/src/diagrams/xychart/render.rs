@@ -186,6 +186,31 @@ fn tidy(value: f64) -> f64 {
     format!("{value:.11e}").parse().unwrap_or(value)
 }
 
+/// The color of the series at `index` of `count`, as the `--ondine-series-*` variable of its
+/// place. With `spread`, its default shade runs evenly from the foreground down to 35% of it
+/// across the series of the chart, so that segments of a stack stay apart. Otherwise it is the
+/// shared series color, which keeps every shade above half the foreground.
+fn chart_color(index: usize, count: usize, spread: bool) -> String {
+    if !spread {
+        return series_color(i64::try_from(index).unwrap_or(i64::MAX));
+    }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "series counts stay far below 2^52"
+    )]
+    let share = if count > 1 {
+        100.0 - 65.0 * index as f64 / (count - 1) as f64
+    } else {
+        100.0
+    };
+    let mut out = String::from("var(--ondine-series-");
+    out.push(char::from(b'1' + u8::try_from(index % 8).unwrap_or(0)));
+    out.push_str(",color-mix(in srgb,var(--_fg) ");
+    push_number(&mut out, js_round(share));
+    out.push_str("%,var(--_bg)))");
+    out
+}
+
 /// The value axis: its range, which the marks round out to whole steps unless it was written.
 struct Values {
     exact: bool,
@@ -772,7 +797,7 @@ pub(crate) fn render(
     let mut reached: BTreeMap<Stack, (f64, f64)> = BTreeMap::new();
     let mut stands: BTreeMap<Stack, f64> = BTreeMap::new();
     for (index, plot) in plots.iter().enumerate() {
-        let color = series_color(i64::try_from(index).unwrap_or(i64::MAX));
+        let color = chart_color(index, plots.len(), stacked);
         let mut id = String::new();
         if !plot.title.is_empty() {
             id.push_str(" data-id=\"");
@@ -1090,7 +1115,7 @@ pub(crate) fn render(
             break;
         }
         let y = ly + row / 2.0;
-        let color = series_color(i64::try_from(*index).unwrap_or(i64::MAX));
+        let color = chart_color(*index, plots.len(), stacked);
         let Some(plot) = plots.get(*index) else {
             continue;
         };
