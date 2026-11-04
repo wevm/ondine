@@ -1,5 +1,7 @@
 //! Draws an XY chart. Port of Pele's `src/diagrams/xychart/render.ts`.
 
+use std::collections::BTreeMap;
+
 use super::db::{XAxis, XyChartDb};
 use super::ticks::{tick_index, tick_step, tick_value, ticks_between};
 use crate::diagrams::Rendered;
@@ -140,6 +142,50 @@ fn text(raw: Option<&str>, font_size: f64, max: f64) -> Label {
     layout_label(raw, false, font_size, max, 0, None)
 }
 
+/// Where a stack of bars stands: a category by its index, or a place on a numeric x axis by the
+/// value written there. Two categories with one name keep separate stacks.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Stack {
+    At(String),
+    Index(usize),
+}
+
+impl Stack {
+    fn of(x: &XAxis, index: usize, at: &str) -> Self {
+        match x {
+            XAxis::Band { .. } => Self::Index(index),
+            XAxis::Linear(_) => Self::At(at.to_owned()),
+        }
+    }
+}
+
+/// The sum of the negative values and the sum of the other values of every bar series at each
+/// stack, over the first `slots` values of each series.
+fn stack_totals(model: &XyChartDb, slots: usize) -> BTreeMap<Stack, (f64, f64)> {
+    let mut totals = BTreeMap::new();
+    for plot in model.plots.iter().filter(|plot| plot.bar) {
+        for (index, (at, raw)) in plot.data.iter().enumerate().take(slots) {
+            let Some(value) = finite(*raw) else {
+                continue;
+            };
+            let total = totals
+                .entry(Stack::of(&model.x_axis, index, at))
+                .or_insert((0.0, 0.0));
+            if value < 0.0 {
+                total.0 = (total.0 + value).max(-LIMIT);
+            } else {
+                total.1 = (total.1 + value).min(LIMIT);
+            }
+        }
+    }
+    totals
+}
+
+/// `value` to 12 significant digits, which drops the error that adding decimals leaves.
+fn tidy(value: f64) -> f64 {
+    format!("{value:.11e}").parse().unwrap_or(value)
+}
+
 /// The value axis: its range, which the marks round out to whole steps unless it was written.
 struct Values {
     exact: bool,
@@ -207,8 +253,20 @@ pub(crate) fn render(
     // asks for in Mermaid. Inside, whether it fits changes from bar to bar and with the width of
     // the chart.
     let show_values = on(chart, "showDataLabel", false);
+    // Stacked bar series share one bar per category, with positive values above the baseline and
+    // negative values below it. The value of each stack is its total.
+    let stacked = on(chart, "stacked", false);
     let x = &model.x_axis;
     let plots = &model.plots;
+    let count_slots = match x {
+        XAxis::Band { categories, .. } => categories.len().max(1),
+        XAxis::Linear(_) => usize::MAX,
+    };
+    let totals = if stacked {
+        stack_totals(model, count_slots)
+    } else {
+        BTreeMap::new()
+    };
     let line_height = text(Some("0"), small, 4000.0).height;
     let tiny_height = text(Some("0"), tiny, 4000.0).height;
 
@@ -251,11 +309,12 @@ pub(crate) fn render(
     // The value range: as written, or taken from the data, where bars stand on zero and the
     // range grows to whole steps.
     let bars = plots.iter().filter(|plot| plot.bar).count();
+    let slots_per_category = if stacked { bars.min(1) } else { bars };
     #[expect(
         clippy::cast_precision_loss,
         reason = "series counts stay far below 2^52"
     )]
-    let bars_f = bars as f64;
+    let bars_f = slots_per_category as f64;
     let mut lo = model.y_axis.min;
     let mut hi = model.y_axis.max;
     #[expect(clippy::float_cmp, reason = "mirrors Pele's exact comparison")]
@@ -266,7 +325,7 @@ pub(crate) fn render(
     } else {
         lo = f64::INFINITY;
         hi = f64::NEG_INFINITY;
-        for plot in plots {
+        for plot in plots.iter().filter(|plot| !(stacked && plot.bar)) {
             for &(_, raw) in &plot.data {
                 let Some(value) = finite(raw) else {
                     continue;
@@ -278,6 +337,10 @@ pub(crate) fn render(
                     hi = value;
                 }
             }
+        }
+        for &(negative, positive) in totals.values() {
+            lo = min(lo, negative);
+            hi = max(hi, positive);
         }
         if lo > hi {
             lo = 0.0;
@@ -473,10 +536,21 @@ pub(crate) fn render(
         for label in plot.point_labels.iter().flatten() {
             point_label_width = max(point_label_width, measure::width(label, tiny, 0));
         }
-        if show_values && horizontal && plot.bar {
+        if show_values && horizontal && plot.bar && !stacked {
             for &(_, value) in &plot.data {
                 let written = finite(value).map(number_text).unwrap_or_default();
                 value_width = max(value_width, measure::width(&written, tiny, 0));
+            }
+        }
+    }
+
+    if show_values && horizontal {
+        for &(negative, positive) in totals.values() {
+            for total in [negative, positive] {
+                value_width = max(
+                    value_width,
+                    measure::width(&number_text(tidy(total)), tiny, 0),
+                );
             }
         }
     }
@@ -676,7 +750,7 @@ pub(crate) fn render(
     let span = (if horizontal { plot_height } else { plot_width }) * slot;
     let group = span * 0.7;
     let thickness = group / max(bars_f, 1.0);
-    let gap = if bars > 1 {
+    let gap = if slots_per_category > 1 {
         min(2.0, thickness * 0.2)
     } else {
         0.0
@@ -693,10 +767,10 @@ pub(crate) fn render(
     let mut outside = String::new();
     let mut point_labels = String::new();
     let mut bar = 0.0;
-    let count_slots = match x {
-        XAxis::Band { categories, .. } => categories.len().max(1),
-        XAxis::Linear(_) => usize::MAX,
-    };
+    // How far each stack reaches below and above the baseline, and where it stands on the
+    // category axis.
+    let mut reached: BTreeMap<Stack, (f64, f64)> = BTreeMap::new();
+    let mut stands: BTreeMap<Stack, f64> = BTreeMap::new();
     for (index, plot) in plots.iter().enumerate() {
         let color = series_color(i64::try_from(index).unwrap_or(i64::MAX));
         let mut id = String::new();
@@ -708,17 +782,44 @@ pub(crate) fn render(
         // A series declared before the categories can hold more values than there are categories.
         let n = plot.data.len().min(count_slots);
         if plot.bar {
-            let offset = (bar - (bars_f - 1.0) / 2.0) * thickness - (thickness - gap) / 2.0;
-            bar += 1.0;
+            let offset = if stacked {
+                -thickness / 2.0
+            } else {
+                let offset = (bar - (bars_f - 1.0) / 2.0) * thickness - (thickness - gap) / 2.0;
+                bar += 1.0;
+                offset
+            };
             let mut rects = String::new();
             for i in 0..n {
                 let Some(value) = finite(plot.data.get(i).and_then(|d| d.1)) else {
                     continue;
                 };
                 let c = place(i, n);
-                let v = clamp(scale(value));
-                let from = min(base, v);
-                let to = max(base, v);
+                // A stacked bar starts where the bars before it in its stack end.
+                let start = if stacked {
+                    let key = Stack::of(x, i, plot.data.get(i).map_or("", |d| d.0.as_str()));
+                    stands.insert(key.clone(), c);
+                    if value == 0.0 {
+                        continue;
+                    }
+                    let reach = reached.entry(key).or_insert((0.0, 0.0));
+                    let side = if value < 0.0 {
+                        &mut reach.0
+                    } else {
+                        &mut reach.1
+                    };
+                    let start = *side;
+                    *side = (start + value).clamp(-LIMIT, LIMIT);
+                    Some((start, *side))
+                } else {
+                    None
+                };
+                let (a, v) = match start {
+                    Some((start, end)) => (clamp(scale(start)), clamp(scale(end))),
+                    None => (base, clamp(scale(value))),
+                };
+                let from = min(a, v);
+                let to = max(a, v);
                 let bx = if horizontal {
                     px(c, from)
                 } else {
@@ -739,6 +840,19 @@ pub(crate) fn render(
                 } else {
                     (to - from) * plot_height
                 };
+                // A bar stacked on another leaves a line of the background between them.
+                let (bx, by, bw, bh) = match start {
+                    Some((start, _)) if start != 0.0 => {
+                        let cut = 1.0_f64;
+                        match (horizontal, value < 0.0) {
+                            (false, false) => (bx, by, bw, max(0.0, bh - cut)),
+                            (false, true) => (bx, by + cut.min(bh), bw, max(0.0, bh - cut)),
+                            (true, false) => (bx + cut.min(bw), by, max(0.0, bw - cut), bh),
+                            (true, true) => (bx, by, max(0.0, bw - cut), bh),
+                        }
+                    }
+                    _ => (bx, by, bw, bh),
+                };
                 rects.push_str("<rect x=\"");
                 push_num(&mut rects, bx);
                 rects.push_str("\" y=\"");
@@ -748,7 +862,7 @@ pub(crate) fn render(
                 rects.push_str("\" height=\"");
                 push_num(&mut rects, bh);
                 rects.push_str("\"/>");
-                if !show_values {
+                if !show_values || stacked {
                     continue;
                 }
                 let label = number_text(value);
@@ -892,6 +1006,57 @@ pub(crate) fn render(
         }
         lines.push_str(&dots);
         lines.push_str("</g>");
+    }
+
+    // Each stack is labelled with its total past its end, and a stack that goes both ways with
+    // both totals.
+    if show_values {
+        for (key, &(negative, positive)) in &totals {
+            let Some(&c) = stands.get(key) else {
+                continue;
+            };
+            // A stack of zeros is labelled 0 above the baseline.
+            let sides = [
+                (negative, negative < 0.0),
+                (positive, positive > 0.0 || negative == 0.0),
+            ];
+            for (total, shown) in sides {
+                if !shown {
+                    continue;
+                }
+                let label = number_text(tidy(total));
+                let v = clamp(scale(total));
+                let out = if total < 0.0 { -1.0 } else { 1.0 };
+                let (tx, ty, anchor) = if horizontal {
+                    if thickness < tiny {
+                        continue;
+                    }
+                    (
+                        px(c, v) + out * 6.0,
+                        py(c, 0.0),
+                        if out > 0.0 { "start" } else { "end" },
+                    )
+                } else {
+                    if measure::width(&label, tiny, 0) + 2.0 > span {
+                        continue;
+                    }
+                    (
+                        px(c, 0.0),
+                        py(c, v) - out * (tiny_height / 2.0 + 2.0),
+                        "middle",
+                    )
+                };
+                outside.push_str("<text x=\"");
+                push_num(&mut outside, tx);
+                outside.push_str("\" y=\"");
+                push_num(&mut outside, ty + tiny * 0.35);
+                outside.push_str("\" text-anchor=\"");
+                outside.push_str(anchor);
+                outside.push_str("\">");
+                outside.push_str(&label);
+                outside.push_str("</text>");
+            }
+        }
     }
 
     let mut titles = String::new();
