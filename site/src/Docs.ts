@@ -22,6 +22,7 @@ export const groups: readonly { pages: readonly Item[]; title: string }[] = [
       { path: 'guides/mdx', title: 'MDX' },
       { path: 'guides/node', title: 'Node Compiler' },
       { path: 'guides/browser', title: 'In-Browser Compilation' },
+      { path: 'guides/swift', title: 'Swift Package' },
       { path: 'guides/github', title: 'GitHub Images' },
       { path: 'guides/theming', title: 'Theming' },
       { path: 'guides/mounting', title: 'Mounting' },

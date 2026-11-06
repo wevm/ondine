@@ -82,6 +82,22 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --all-features
 
+  swift:
+    name: Swift
+    needs: wasm
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+
+      - name: Restore WebAssembly
+        uses: ./.github/actions/wasm-modules
+
+      # WasmKit 0.4 needs Swift 6.3.
+      - name: Run tests
+        run: docker run --rm --volume "$PWD:/ondine" --workdir /ondine swift:6.3-noble swift test
+
   test:
     name: Test Runtime
     needs: wasm
