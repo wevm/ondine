@@ -71,7 +71,7 @@ render('flowchart LR\n  A --> B', { directionBreakpoint: 480, maxWidth: 400 })
 - **Type:** `number{:ts}`
 - **Default:** `16{:ts}`
 
-The font size, in pixels. The compiler measures each label character at 0.6 of this size, so shapes grow with the font size.
+The font size, in pixels. The compiler measures each label character at 0.6 of this size, or with `textMetrics` if set, so shapes grow with the font size.
 
 ```ts
 import { render } from 'ondine/compiler'
@@ -189,6 +189,84 @@ import { render } from 'ondine/compiler'
 
 // Keeps the SVG at its intrinsic width and height
 render('flowchart LR\n  A --> B', { responsive: false })
+```
+
+### options.textMetrics
+
+- **Type:** `{ advances: readonly number[]; bold?: readonly number[]; other?: number; wide?: number }{:ts}`
+
+The glyph advances of the font that draws labels, in thousandths of an em. If this option is not set, each character advances 0.6 em. With a table, labels laid out for a proportional font fit their shapes. Set `--ondine-font` to the same font.
+
+The table is plain data, so the same source and options produce the same SVG in every host. Derive it once from the font, for example with canvas `measureText` or the font's advance widths, and reuse it.
+
+Zero-width and control characters always advance 0. If a table does not have 95 entries, or an advance is not a finite number of 0 or more, the compiler ignores the whole option.
+
+```ts
+import { render } from 'ondine/compiler'
+
+// Converts a font's advance widths for U+0020 through U+007E from font units to thousandths of an em
+const advances = advanceWidths.map((width) => (width / unitsPerEm) * 1000)
+render('flowchart LR\n  A[Mermaid text] --> B', { textMetrics: { advances } })
+```
+
+### options.textMetrics.advances
+
+- **Type:** `readonly number[]{:ts}`
+
+The advances of the 95 printable ASCII characters, U+0020 through U+007E, in code point order.
+
+```ts
+import { render } from 'ondine/compiler'
+
+// Measures every printable ASCII character at 0.5 em
+render('flowchart LR\n  A --> B', { textMetrics: { advances: Array(95).fill(500) } })
+```
+
+### options.textMetrics.bold
+
+- **Type:** `readonly number[]{:ts}`
+
+The advances of the 95 printable ASCII characters in bold text, in the same order as `advances`. If this field is not set, bold text uses `advances`.
+
+```ts
+import { render } from 'ondine/compiler'
+
+// Measures bold class names wider than regular text
+render('classDiagram\n  class Animal', {
+  textMetrics: { advances: Array(95).fill(550), bold: Array(95).fill(600) },
+})
+```
+
+### options.textMetrics.other
+
+- **Type:** `number{:ts}`
+- **Default:** `600{:ts}`
+
+The advance of a character outside printable ASCII that is not wide, such as an accented letter.
+
+```ts
+import { render } from 'ondine/compiler'
+
+// Measures é and other non-ASCII letters at 0.55 em
+render('flowchart LR\n  A[Café] --> B', {
+  textMetrics: { advances: Array(95).fill(600), other: 550 },
+})
+```
+
+### options.textMetrics.wide
+
+- **Type:** `number{:ts}`
+- **Default:** `1200{:ts}`
+
+The advance of a wide character, such as an East Asian character or an emoji.
+
+```ts
+import { render } from 'ondine/compiler'
+
+// Measures each CJK character at 1 em
+render('flowchart LR\n  A[漢字] --> B', {
+  textMetrics: { advances: Array(95).fill(600), wide: 1000 },
+})
 ```
 
 ## Returns

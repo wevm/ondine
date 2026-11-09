@@ -20,6 +20,32 @@ describe('render', () => {
     )
   })
 
+  test('renders labels with text metrics', () => {
+    const source = 'flowchart LR\n  A[Mermaid text] --> B[Ondine]'
+    const outline = (svg: string) => svg.match(/data-id="A"[^>]*>(<rect[^>]*>)/)?.[1]
+
+    const uniform = render(source)
+    const fitted = render(source, {
+      textMetrics: { advances: Array.from({ length: 95 }, () => 500) },
+    })
+
+    expect(outline(uniform.svg)).toMatchInlineSnapshot(
+      `"<rect x="-75.6" y="-24" width="151.2" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/>"`,
+    )
+    expect(outline(fitted.svg)).toMatchInlineSnapshot(
+      `"<rect x="-66" y="-24" width="132" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/>"`,
+    )
+    expect(fitted.width).toMatchInlineSnapshot(`280`)
+  })
+
+  test('ignores text metrics with the wrong length', () => {
+    const source = 'flowchart LR\n  A[Mermaid text] --> B[Ondine]'
+
+    const result = render(source, { textMetrics: { advances: [500] } })
+
+    expect(result.svg === render(source).svg).toMatchInlineSnapshot(`true`)
+  })
+
   test('rejects text without a diagram type', () => {
     expect(() => render('not a diagram')).toThrowErrorMatchingInlineSnapshot(
       `[Render.RenderError: No diagram type detected for the given text.]`,
