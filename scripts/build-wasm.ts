@@ -2,10 +2,10 @@
  * Builds one size-optimized WebAssembly module per diagram type and inlines each as base64 in
  * `src/internal/<type>.generated.ts`, beside the raw `src/internal/<type>.generated.wasm` for hosts
  * that only accept precompiled modules. Also builds `all.fast.generated.wasm`, every type optimized
- * for speed, which `ondine/compiler` loads in Node, and `test/oracles/model.generated.wasm`, every
- * type with the `model` export that the oracle tests read. Outputs are gitignored and rewritten only
- * when they change. Writes the matching `ondine/compiler/wasm/<type>` and `<type>.wasm` exports into
- * `package.json`.
+ * for speed with the `theme` option, which `ondine/compiler` loads in Node, and
+ * `test/oracles/model.generated.wasm`, every type with the `model` export that the oracle tests
+ * read. Outputs are gitignored and rewritten only when they change. Writes the matching
+ * `ondine/compiler/wasm/<type>` and `<type>.wasm` exports into `package.json`.
  * @module
  */
 import * as ChildProcess from 'node:child_process'
@@ -91,7 +91,8 @@ const fresh =
 if (fresh) console.log('WebAssembly modules are up to date.')
 else {
   // `all` includes every diagram type, for the root entrypoint and the tests. Build tools,
-  // servers, and the CLI download nothing, so `all.fast` trades size for speed.
+  // servers, and the CLI download nothing, so `all.fast` trades size for speed and alone adds the
+  // `theme` option. Browsers and the image Worker load the size modules, which stay without it.
   const jobs: (() => Promise<void>)[] = [
     ...['all', ...types].map((type) => async () => {
       const bytes = await build(type)
@@ -101,7 +102,7 @@ else {
     async () =>
       write(
         Path.join(root, 'src/internal/all.fast.generated.wasm'),
-        await build('all', { fast: true }),
+        await build('all,theme', { fast: true }),
       ),
     // Tests compare parsed models, which no published module exports.
     async () => write(modelFile, await build('all,model', { model: true })),
@@ -160,11 +161,13 @@ function run(command: string, args: readonly string[], env: NodeJS.ProcessEnv): 
   })
 }
 
-/** Builds the `wasm` crate with one diagram feature, optimizes it, and returns its bytes. */
+/** Builds the `wasm` crate with `feature`, or a comma-separated list, optimizes it, and returns its bytes. */
 async function build(feature: string, options: build.Options = {}): Promise<Buffer> {
   const fast = options.fast === true
   const model = options.model === true
-  const targetDir = model ? 'target/wasm-model' : `target/wasm-${feature}${fast ? '-fast' : ''}`
+  const targetDir = model
+    ? 'target/wasm-model'
+    : `target/wasm-${feature.replaceAll(',', '-')}${fast ? '-fast' : ''}`
   const sized = !fast && !model && nightlyInstalled
 
   // Rebuilding `std` with `optimize_for_size` and aborting panics without formatting their messages

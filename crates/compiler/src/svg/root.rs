@@ -46,6 +46,10 @@ pub(crate) struct RenderOptions {
     pub(crate) padding: Option<f64>,
     /// Whether the document scales down to its container. On unless `Some(false)`.
     pub(crate) responsive: Option<bool>,
+    /// When present, the theme is written into the document as literal values: the host's
+    /// `--ondine-*` properties. The rest keep their defaults.
+    #[cfg(feature = "theme")]
+    pub(crate) theme: Option<Vec<crate::svg::resolve::Property>>,
 }
 
 /// A diagram's accessible title and description.
@@ -177,6 +181,9 @@ pub(crate) fn svg_document(
         }
     }
 
+    // A written-out radius stays in the `rx` attribute, which renderers without CSS geometry read.
+    #[cfg(feature = "theme")]
+    let themed = themed && options.theme.is_none();
     let content = if themed {
         let (content, moved) = rounded(content);
         radius |= moved;

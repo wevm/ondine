@@ -129,7 +129,7 @@ fn call_at(text: &str, at: usize, word: &str) -> bool {
 }
 
 /// Pele's `/url\s*\(|expression\s*\(|javascript:|[<>{};\\]|@import|image-set|\/\*/i`.
-fn unsafe_value(value: &str) -> bool {
+pub(crate) fn unsafe_value(value: &str) -> bool {
     let bytes = value.as_bytes();
     (0..bytes.len()).any(|at| {
         matches!(
