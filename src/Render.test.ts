@@ -20,6 +20,26 @@ describe('render', () => {
     )
   })
 
+  test('stacks xychart bar series', () => {
+    // Positive values stack above the baseline and negative values below it.
+    const result = render(
+      '---\nconfig:\n  xyChart:\n    stacked: true\n    showDataLabel: true\n---\nxychart\n  x-axis [a, b]\n  bar "up" [2, 3]\n  bar "down" [-1, 1]\n',
+    )
+
+    const bars = result.svg.match(/<g class="ondine-series ondine-bars".*?<\/g>/g)
+    const totals = result.svg.match(/<g class="ondine-data-labels".*?<\/g>/)?.[0]
+
+    expect(bars).toMatchInlineSnapshot(`
+      [
+        "<g class="ondine-series ondine-bars" data-id="up" fill="var(--ondine-series-1,color-mix(in srgb,var(--_fg) 100%,var(--_bg)))"><rect x="78.27" y="203.2" width="202.86" height="173.2"/><rect x="368.07" y="116.6" width="202.86" height="259.8"/></g>",
+        "<g class="ondine-series ondine-bars" data-id="down" fill="var(--ondine-series-2,color-mix(in srgb,var(--_fg) 35%,var(--_bg)))"><rect x="78.27" y="376.4" width="202.86" height="86.6"/><rect x="368.07" y="30" width="202.86" height="85.6"/></g>",
+      ]
+    `)
+    expect(totals).toMatchInlineSnapshot(
+      `"<g class="ondine-data-labels" font-size="12"><text x="179.7" y="478.2" text-anchor="middle">-1</text><text x="179.7" y="196.4" text-anchor="middle">2</text><text x="469.5" y="23.2" text-anchor="middle">4</text></g>"`,
+    )
+  })
+
   test('rejects text without a diagram type', () => {
     expect(() => render('not a diagram')).toThrowErrorMatchingInlineSnapshot(
       `[Render.RenderError: No diagram type detected for the given text.]`,

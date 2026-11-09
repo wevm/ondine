@@ -4,6 +4,28 @@
 
 Bar and line series on an x and y axis.
 
+## Stacked Bars
+
+The `stacked` option of `xyChart` draws all bar series as one bar per category. Positive values stack above the baseline, and negative values stack below it. Lines do not stack.
+
+If no `y-axis` range is set, the value axis fits the stack totals. With `showDataLabel`, each stack shows its total.
+
+```mermaid
+---
+config:
+  xyChart:
+    stacked: true
+    showDataLabel: true
+---
+xychart
+    title "Orders by channel"
+    x-axis [Q1, Q2, Q3, Q4]
+    %% Each bar series is one layer of the stack
+    bar "Online" [12, 15, 18, 22]
+    bar "Store" [8, 7, 9, 10]
+    bar "Partner" [3, 4, 6, 7]
+```
+
 ## Examples
 
 The playground samples for this type, rendered by Ondine when the documentation builds.
