@@ -26,6 +26,31 @@ xychart
     bar "Partner" [3, 4, 6, 7]
 ```
 
+## Right Axis
+
+The `rightAxis` option of `xyChart` measures the named series against a second value axis. The axis is drawn on the right, or along the top of a horizontal chart.
+
+Set `series` to a list of series titles. `title`, `min`, and `max` set the title and range of the axis. Without a range, the axis fits its series.
+
+```mermaid
+---
+config:
+  xyChart:
+    rightAxis:
+      series: [Margin]
+      title: "Margin (%)"
+      min: 0
+      max: 50
+---
+xychart
+    title "Revenue and margin"
+    x-axis [Q1, Q2, Q3, Q4]
+    y-axis "Revenue ($M)"
+    %% Revenue uses the left axis, and Margin uses the right axis
+    bar "Revenue" [120, 180, 240, 310]
+    line "Margin" [12, 18, 22, 29]
+```
+
 ## Examples
 
 The playground samples for this type, rendered by Ondine when the documentation builds.

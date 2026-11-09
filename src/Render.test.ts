@@ -40,6 +40,23 @@ describe('render', () => {
     )
   })
 
+  test('draws xychart series on a right axis', () => {
+    // The line named in rightAxis.series is measured against the right axis, from 0 to 10.
+    const result = render(
+      '---\nconfig:\n  xyChart:\n    rightAxis:\n      series: [rate]\n      title: Rate\n      min: 0\n      max: 10\n---\nxychart\n  x-axis [a, b]\n  bar "count" [100, 200]\n  line "rate" [5, 10]\n',
+    )
+
+    const line = result.svg.match(/<g class="ondine-series ondine-line".*?<\/g>/)?.[0]
+    const titles = result.svg.match(/<g class="ondine-axis-titles".*?<\/g><\/g>/)?.[0]
+
+    expect(line).toMatchInlineSnapshot(
+      `"<g class="ondine-series ondine-line" data-id="rate" fill="var(--ondine-series-2,color-mix(in srgb,var(--_fg) 35%,var(--_bg)))"><path d="M170.45,240.75L424.95,18.5" fill="none" stroke="var(--ondine-series-2,color-mix(in srgb,var(--_fg) 35%,var(--_bg)))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="170.45" cy="240.75" r="3"/><circle cx="424.95" cy="18.5" r="3"/></g>"`,
+    )
+    expect(titles).toMatchInlineSnapshot(
+      `"<g class="ondine-axis-titles" font-size="14"><g transform="translate(595.5,240.75) rotate(90)"><text x="0" y="4.9" text-anchor="middle">Rate</text></g></g>"`,
+    )
+  })
+
   test('rejects text without a diagram type', () => {
     expect(() => render('not a diagram')).toThrowErrorMatchingInlineSnapshot(
       `[Render.RenderError: No diagram type detected for the given text.]`,
