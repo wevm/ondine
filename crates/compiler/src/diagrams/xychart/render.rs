@@ -1,5 +1,7 @@
 //! Draws an XY chart. Port of Pele's `src/diagrams/xychart/render.ts`.
 
+use std::collections::BTreeMap;
+
 use super::db::{XAxis, XyChartDb};
 use super::ticks::{tick_index, tick_step, tick_value, ticks_between};
 use crate::diagrams::Rendered;
@@ -8,7 +10,7 @@ use crate::error::{Code, Error};
 use crate::svg::builder::{esc, esc_text, js_round, label_svg, push_num};
 use crate::svg::root::{Accessible, RenderOptions, svg_document};
 use crate::svg::theme::series_color;
-use crate::text::label::{Label, layout_label};
+use crate::text::label::{Label, layout_label, trim};
 use crate::text::measure::{self, BOLD};
 use crate::yaml::{Value, push_number};
 
@@ -140,6 +142,81 @@ fn text(raw: Option<&str>, font_size: f64, max: f64) -> Label {
     layout_label(raw, false, font_size, max, 0, None)
 }
 
+/// Where a stack of bars stands: a category by its index, or a place on a numeric x axis by the
+/// value written there. Two categories with one name keep separate stacks.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Stack {
+    At(String),
+    Index(usize),
+}
+
+impl Stack {
+    fn of(x: &XAxis, index: usize, at: &str) -> Self {
+        match x {
+            XAxis::Band { .. } => Self::Index(index),
+            XAxis::Linear(_) => Self::At(at.to_owned()),
+        }
+    }
+}
+
+/// The sum of the negative values and the sum of the other values of every bar series at each
+/// stack, over the first `slots` values of each series. Series on the right axis, as `right` marks
+/// them, stack apart from the others.
+fn stack_totals(
+    model: &XyChartDb,
+    right: &[bool],
+    slots: usize,
+) -> BTreeMap<(bool, Stack), (f64, f64)> {
+    let mut totals = BTreeMap::new();
+    for (p, plot) in model.plots.iter().enumerate().filter(|(_, plot)| plot.bar) {
+        let side = right.get(p).copied().unwrap_or(false);
+        for (index, (at, raw)) in plot.data.iter().enumerate().take(slots) {
+            let Some(value) = finite(*raw) else {
+                continue;
+            };
+            let total = totals
+                .entry((side, Stack::of(&model.x_axis, index, at)))
+                .or_insert((0.0, 0.0));
+            if value < 0.0 {
+                total.0 = (total.0 + value).max(-LIMIT);
+            } else {
+                total.1 = (total.1 + value).min(LIMIT);
+            }
+        }
+    }
+    totals
+}
+
+/// `value` to 12 significant digits, which drops the error that adding decimals leaves.
+fn tidy(value: f64) -> f64 {
+    format!("{value:.11e}").parse().unwrap_or(value)
+}
+
+/// The color of the series at `index` of `count`, as the `--ondine-series-*` variable of its
+/// place. With `spread`, its default shade runs evenly from the foreground down to 35% of it
+/// across the series of the chart, so that segments of a stack and bars of two axes stay apart.
+/// Otherwise it is the shared series color, which keeps every shade above half the foreground.
+fn chart_color(index: usize, count: usize, spread: bool) -> String {
+    if !spread {
+        return series_color(i64::try_from(index).unwrap_or(i64::MAX));
+    }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "series counts stay far below 2^52"
+    )]
+    let share = if count > 1 {
+        100.0 - 65.0 * index as f64 / (count - 1) as f64
+    } else {
+        100.0
+    };
+    let mut out = String::from("var(--ondine-series-");
+    out.push(char::from(b'1' + u8::try_from(index % 8).unwrap_or(0)));
+    out.push_str(",color-mix(in srgb,var(--_fg) ");
+    push_number(&mut out, js_round(share));
+    out.push_str("%,var(--_bg)))");
+    out
+}
+
 /// The value axis: its range, which the marks round out to whole steps unless it was written.
 struct Values {
     exact: bool,
@@ -207,8 +284,46 @@ pub(crate) fn render(
     // asks for in Mermaid. Inside, whether it fits changes from bar to bar and with the width of
     // the chart.
     let show_values = on(chart, "showDataLabel", false);
+    // Stacked bar series share one bar per category, with positive values above the baseline and
+    // negative values below it. The value of each stack is its total.
+    let stacked = on(chart, "stacked", false);
     let x = &model.x_axis;
     let plots = &model.plots;
+    let count_slots = match x {
+        XAxis::Band { categories, .. } => categories.len().max(1),
+        XAxis::Linear(_) => usize::MAX,
+    };
+    // Series named in rightAxis.series are measured against a second value axis, drawn on the
+    // right of the plot, or along its top when the chart runs horizontal.
+    let right_conf = record(setting("rightAxis"));
+    let right_names: Vec<&str> = match right_conf.and_then(|conf| property(conf, "series")) {
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(|item| match item {
+                Value::String(name) => Some(trim(name)),
+                _ => None,
+            })
+            .collect(),
+        Some(Value::String(name)) => vec![trim(name)],
+        _ => Vec::new(),
+    };
+    let on_right: Vec<bool> = plots
+        .iter()
+        .map(|plot| !plot.title.is_empty() && right_names.contains(&plot.title.as_str()))
+        .collect();
+    let dual = on_right.contains(&true);
+    let side_of = |index: usize| on_right.get(index).copied().unwrap_or(false);
+    let has_bars = |side: bool| {
+        plots
+            .iter()
+            .enumerate()
+            .any(|(index, plot)| plot.bar && side_of(index) == side)
+    };
+    let totals = if stacked {
+        stack_totals(model, &on_right, count_slots)
+    } else {
+        BTreeMap::new()
+    };
     let line_height = text(Some("0"), small, 4000.0).height;
     let tiny_height = text(Some("0"), tiny, 4000.0).height;
 
@@ -251,22 +366,31 @@ pub(crate) fn render(
     // The value range: as written, or taken from the data, where bars stand on zero and the
     // range grows to whole steps.
     let bars = plots.iter().filter(|plot| plot.bar).count();
+    // Stacks of the two axes stand side by side.
+    let slots_per_category = if stacked {
+        usize::from(has_bars(false)) + usize::from(has_bars(true))
+    } else {
+        bars
+    };
     #[expect(
         clippy::cast_precision_loss,
         reason = "series counts stay far below 2^52"
     )]
-    let bars_f = bars as f64;
-    let mut lo = model.y_axis.min;
-    let mut hi = model.y_axis.max;
-    #[expect(clippy::float_cmp, reason = "mirrors Pele's exact comparison")]
-    let exact = model.has_set_y_axis && lo.is_finite() && hi.is_finite() && lo != hi;
-    if exact {
-        lo = finite(Some(lo)).unwrap_or(f64::NAN);
-        hi = finite(Some(hi)).unwrap_or(f64::NAN);
-    } else {
-        lo = f64::INFINITY;
-        hi = f64::NEG_INFINITY;
-        for plot in plots {
+    let bars_f = slots_per_category as f64;
+    let range = |side: bool, written: Option<(f64, f64)>| -> Values {
+        if let Some((lo, hi)) = written {
+            return Values {
+                exact: true,
+                hi: finite(Some(hi)).unwrap_or(f64::NAN),
+                lo: finite(Some(lo)).unwrap_or(f64::NAN),
+            };
+        }
+        let mut lo = f64::INFINITY;
+        let mut hi = f64::NEG_INFINITY;
+        for (index, plot) in plots.iter().enumerate() {
+            if side_of(index) != side || (stacked && plot.bar) {
+                continue;
+            }
             for &(_, raw) in &plot.data {
                 let Some(value) = finite(raw) else {
                     continue;
@@ -279,11 +403,17 @@ pub(crate) fn render(
                 }
             }
         }
+        for (&(own, _), &(negative, positive)) in &totals {
+            if own == side {
+                lo = min(lo, negative);
+                hi = max(hi, positive);
+            }
+        }
         if lo > hi {
             lo = 0.0;
             hi = 0.0;
         }
-        if bars > 0 {
+        if has_bars(side) {
             lo = min(lo, 0.0);
             hi = max(hi, 0.0);
         }
@@ -296,8 +426,28 @@ pub(crate) fn render(
                 hi += hi.abs() / 2.0;
             }
         }
-    }
-    let mut values = Values { exact, hi, lo };
+        Values {
+            exact: false,
+            hi,
+            lo,
+        }
+    };
+    #[expect(clippy::float_cmp, reason = "mirrors Pele's exact comparison")]
+    let written =
+        |lo: f64, hi: f64| (lo.is_finite() && hi.is_finite() && lo != hi).then_some((lo, hi));
+    let mut values = range(
+        false,
+        if model.has_set_y_axis {
+            written(model.y_axis.min, model.y_axis.max)
+        } else {
+            None
+        },
+    );
+    let right_number = |key: &str| match right_conf.and_then(|conf| property(conf, key)) {
+        Some(Value::Number(value)) => *value,
+        _ => f64::NAN,
+    };
+    let mut right_values = range(true, written(right_number("min"), right_number("max")));
 
     // Places along the category axis are fractions of its length. Categories and bars sit in the
     // middle of equal slots. The points of a line on a numeric axis run from end to end.
@@ -388,6 +538,38 @@ pub(crate) fn render(
     let left_labels = on(left_conf, "showLabel", true);
     let bottom_labels = on(bottom_conf, "showLabel", true);
 
+    let right_title = text(
+        match right_conf.and_then(|conf| property(conf, "title")) {
+            Some(Value::String(title)) if dual && on(right_conf, "showTitle", true) => {
+                Some(trim(title))
+            }
+            _ => None,
+        },
+        small,
+        if horizontal {
+            width * 0.8
+        } else {
+            height * 0.8
+        },
+    );
+    let right_tick = if dual && on(right_conf, "showTick", true) {
+        TICK
+    } else {
+        0.0
+    };
+    let right_labels = dual && on(right_conf, "showLabel", true);
+    let above = if dual && horizontal {
+        right_tick
+            + if right_labels { line_height + 4.0 } else { 0.0 }
+            + if right_title.height > 0.0 {
+                right_title.height + 4.0
+            } else {
+                0.0
+            }
+    } else {
+        0.0
+    };
+
     let wrap_at = if horizontal {
         width * 0.3
     } else {
@@ -473,10 +655,21 @@ pub(crate) fn render(
         for label in plot.point_labels.iter().flatten() {
             point_label_width = max(point_label_width, measure::width(label, tiny, 0));
         }
-        if show_values && horizontal && plot.bar {
+        if show_values && horizontal && plot.bar && !stacked {
             for &(_, value) in &plot.data {
                 let written = finite(value).map(number_text).unwrap_or_default();
                 value_width = max(value_width, measure::width(&written, tiny, 0));
+            }
+        }
+    }
+
+    if show_values && horizontal {
+        for &(negative, positive) in totals.values() {
+            for total in [negative, positive] {
+                value_width = max(
+                    value_width,
+                    measure::width(&number_text(tidy(total)), tiny, 0),
+                );
             }
         }
     }
@@ -508,7 +701,7 @@ pub(crate) fn render(
     } else {
         0.0
     };
-    let top = pad + title_space + headroom;
+    let top = pad + title_space + headroom + above;
     let plot_height = max(1.0, height - pad - bottom_space - top);
     let bottom = top + plot_height;
 
@@ -549,13 +742,38 @@ pub(crate) fn render(
     } else {
         0.0
     };
-    let mut plot_width = max(1.0, width - pad - left - legend_space - reach);
+    let right_marks = if dual && !horizontal {
+        right_values.marks(plot_height, 56.0, small)
+    } else {
+        Vec::new()
+    };
+    let right_label_width = if right_labels {
+        widest(&right_marks)
+    } else {
+        0.0
+    };
+    let beyond = if dual && !horizontal {
+        right_tick
+            + if right_label_width > 0.0 {
+                right_label_width + 6.0
+            } else {
+                0.0
+            }
+            + if right_title.height > 0.0 {
+                right_title.height + 6.0
+            } else {
+                0.0
+            }
+    } else {
+        0.0
+    };
+    let mut plot_width = max(1.0, width - pad - left - legend_space - reach - beyond);
     let bottom_marks = if horizontal {
         values.marks(plot_width, 80.0, small)
     } else {
         category_marks(plot_width)
     };
-    if bottom_labels && legend_space + reach == 0.0 {
+    if bottom_labels && legend_space + reach + beyond == 0.0 {
         let mut over = 0.0;
         for mark in &bottom_marks {
             over = max(
@@ -566,7 +784,13 @@ pub(crate) fn render(
         plot_width = max(1.0, plot_width - over);
     }
     let right = left + plot_width;
+    let right_marks = if dual && horizontal {
+        right_values.marks(plot_width, 80.0, small)
+    } else {
+        right_marks
+    };
     let (lo, hi) = (values.lo, values.hi);
+    let (right_lo, right_hi) = (right_values.lo, right_values.hi);
 
     let px = |c: f64, v: f64| {
         if horizontal {
@@ -583,6 +807,13 @@ pub(crate) fn render(
         }
     };
     let scale = |value: f64| (value - lo) / (hi - lo);
+    let scale_of = |side: bool, value: f64| {
+        if side {
+            (value - right_lo) / (right_hi - right_lo)
+        } else {
+            scale(value)
+        }
+    };
     let clamp = |v: f64| min(max(v, 0.0), 1.0);
 
     // A line across the plot at a place on the value axis.
@@ -673,18 +904,78 @@ pub(crate) fn render(
         }
     }
 
+    if dual && on(right_conf, "showAxisLine", true) {
+        axis.push('M');
+        if horizontal {
+            push_num(&mut axis, left);
+            axis.push(',');
+            push_num(&mut axis, top);
+            axis.push('H');
+            push_num(&mut axis, right);
+        } else {
+            push_num(&mut axis, right);
+            axis.push(',');
+            push_num(&mut axis, top);
+            axis.push('V');
+            push_num(&mut axis, bottom);
+        }
+    }
+    for mark in &right_marks {
+        let (at, label) = if horizontal {
+            let at = left + mark.at * plot_width;
+            (
+                at,
+                aligned(
+                    &mark.label,
+                    at,
+                    top - right_tick - 4.0 - mark.label.height / 2.0,
+                    Anchor::Middle,
+                ),
+            )
+        } else {
+            let at = bottom - mark.at * plot_height;
+            (
+                at,
+                aligned(&mark.label, right + right_tick + 6.0, at, Anchor::Start),
+            )
+        };
+        if right_tick != 0.0 {
+            axis.push('M');
+            if horizontal {
+                push_num(&mut axis, at);
+                axis.push(',');
+                push_num(&mut axis, top);
+                axis.push('v');
+                push_number(&mut axis, -right_tick);
+            } else {
+                push_num(&mut axis, right);
+                axis.push(',');
+                push_num(&mut axis, at);
+                axis.push('h');
+                push_number(&mut axis, right_tick);
+            }
+        }
+        if right_labels {
+            labels.push_str(&label);
+        }
+    }
+
     let span = (if horizontal { plot_height } else { plot_width }) * slot;
     let group = span * 0.7;
     let thickness = group / max(bars_f, 1.0);
-    let gap = if bars > 1 {
+    let gap = if slots_per_category > 1 {
         min(2.0, thickness * 0.2)
     } else {
         0.0
     };
     let base = clamp(scale(0.0));
+    let right_base = clamp(scale_of(true, 0.0));
     // Bars that go both ways get a line to stand on.
-    if bars > 0 && base > 0.0 && base < 1.0 {
+    if has_bars(false) && base > 0.0 && base < 1.0 {
         rule(&mut axis, base);
+    }
+    if has_bars(true) && right_base > 0.0 && right_base < 1.0 && (right_base - base).abs() > 1e-9 {
+        rule(&mut axis, right_base);
     }
     // Lines are drawn over the bars wherever they were declared, as a bar would hide part of one
     // under it. A series keeps the color of its place in the source.
@@ -693,12 +984,12 @@ pub(crate) fn render(
     let mut outside = String::new();
     let mut point_labels = String::new();
     let mut bar = 0.0;
-    let count_slots = match x {
-        XAxis::Band { categories, .. } => categories.len().max(1),
-        XAxis::Linear(_) => usize::MAX,
-    };
+    // How far each stack reaches below and above the baseline, and where it stands on the
+    // category axis.
+    let mut reached: BTreeMap<(bool, Stack), (f64, f64)> = BTreeMap::new();
+    let mut stands: BTreeMap<(bool, Stack), f64> = BTreeMap::new();
     for (index, plot) in plots.iter().enumerate() {
-        let color = series_color(i64::try_from(index).unwrap_or(i64::MAX));
+        let color = chart_color(index, plots.len(), stacked || dual);
         let mut id = String::new();
         if !plot.title.is_empty() {
             id.push_str(" data-id=\"");
@@ -707,18 +998,53 @@ pub(crate) fn render(
         }
         // A series declared before the categories can hold more values than there are categories.
         let n = plot.data.len().min(count_slots);
+        let side = side_of(index);
         if plot.bar {
-            let offset = (bar - (bars_f - 1.0) / 2.0) * thickness - (thickness - gap) / 2.0;
-            bar += 1.0;
+            let at = if stacked {
+                if side && has_bars(false) { 1.0 } else { 0.0 }
+            } else {
+                bar += 1.0;
+                bar - 1.0
+            };
+            let offset = (at - (bars_f - 1.0) / 2.0) * thickness - (thickness - gap) / 2.0;
+            let base = if side { right_base } else { base };
             let mut rects = String::new();
             for i in 0..n {
                 let Some(value) = finite(plot.data.get(i).and_then(|d| d.1)) else {
                     continue;
                 };
                 let c = place(i, n);
-                let v = clamp(scale(value));
-                let from = min(base, v);
-                let to = max(base, v);
+                // A stacked bar starts where the bars before it in its stack end.
+                let start = if stacked {
+                    let key = (
+                        side,
+                        Stack::of(x, i, plot.data.get(i).map_or("", |d| d.0.as_str())),
+                    );
+                    let along = if horizontal { py(c, 0.0) } else { px(c, 0.0) };
+                    stands.insert(key.clone(), along + offset + (thickness - gap) / 2.0);
+                    if value == 0.0 {
+                        continue;
+                    }
+                    let reach = reached.entry(key).or_insert((0.0, 0.0));
+                    let side = if value < 0.0 {
+                        &mut reach.0
+                    } else {
+                        &mut reach.1
+                    };
+                    let start = *side;
+                    *side = (start + value).clamp(-LIMIT, LIMIT);
+                    Some((start, *side))
+                } else {
+                    None
+                };
+                let (a, v) = match start {
+                    Some((start, end)) => {
+                        (clamp(scale_of(side, start)), clamp(scale_of(side, end)))
+                    }
+                    None => (base, clamp(scale_of(side, value))),
+                };
+                let from = min(a, v);
+                let to = max(a, v);
                 let bx = if horizontal {
                     px(c, from)
                 } else {
@@ -739,6 +1065,19 @@ pub(crate) fn render(
                 } else {
                     (to - from) * plot_height
                 };
+                // A bar stacked on another leaves a line of the background between them.
+                let (bx, by, bw, bh) = match start {
+                    Some((start, _)) if start != 0.0 => {
+                        let cut = 1.0_f64;
+                        match (horizontal, value < 0.0) {
+                            (false, false) => (bx, by, bw, max(0.0, bh - cut)),
+                            (false, true) => (bx, by + cut.min(bh), bw, max(0.0, bh - cut)),
+                            (true, false) => (bx + cut.min(bw), by, max(0.0, bw - cut), bh),
+                            (true, true) => (bx, by, max(0.0, bw - cut), bh),
+                        }
+                    }
+                    _ => (bx, by, bw, bh),
+                };
                 rects.push_str("<rect x=\"");
                 push_num(&mut rects, bx);
                 rects.push_str("\" y=\"");
@@ -748,7 +1087,7 @@ pub(crate) fn render(
                 rects.push_str("\" height=\"");
                 push_num(&mut rects, bh);
                 rects.push_str("\"/>");
-                if !show_values {
+                if !show_values || stacked {
                     continue;
                 }
                 let label = number_text(value);
@@ -809,7 +1148,7 @@ pub(crate) fn render(
                 continue;
             };
             let c = place(i, n);
-            let v = scale(value);
+            let v = scale_of(side, value);
             let visible = (0.0..=1.0).contains(&v);
             if pv.is_nan() {
                 if visible {
@@ -894,6 +1233,57 @@ pub(crate) fn render(
         lines.push_str("</g>");
     }
 
+    // Each stack is labelled with its total past its end, and a stack that goes both ways with
+    // both totals.
+    if show_values {
+        for (key, &(negative, positive)) in &totals {
+            let Some(&along) = stands.get(key) else {
+                continue;
+            };
+            // A stack of zeros is labelled 0 above the baseline.
+            let sides = [
+                (negative, negative < 0.0),
+                (positive, positive > 0.0 || negative == 0.0),
+            ];
+            for (total, shown) in sides {
+                if !shown {
+                    continue;
+                }
+                let label = number_text(tidy(total));
+                let v = clamp(scale_of(key.0, total));
+                let out = if total < 0.0 { -1.0 } else { 1.0 };
+                let (tx, ty, anchor) = if horizontal {
+                    if thickness < tiny {
+                        continue;
+                    }
+                    (
+                        px(0.0, v) + out * 6.0,
+                        along,
+                        if out > 0.0 { "start" } else { "end" },
+                    )
+                } else {
+                    if measure::width(&label, tiny, 0) + 2.0 > span / bars_f {
+                        continue;
+                    }
+                    (
+                        along,
+                        py(0.0, v) - out * (tiny_height / 2.0 + 2.0),
+                        "middle",
+                    )
+                };
+                outside.push_str("<text x=\"");
+                push_num(&mut outside, tx);
+                outside.push_str("\" y=\"");
+                push_num(&mut outside, ty + tiny * 0.35);
+                outside.push_str("\" text-anchor=\"");
+                outside.push_str(anchor);
+                outside.push_str("\">");
+                outside.push_str(&label);
+                outside.push_str("</text>");
+            }
+        }
+    }
+
     let mut titles = String::new();
     if left_title.height > 0.0 {
         titles.push_str("<g transform=\"translate(");
@@ -903,6 +1293,25 @@ pub(crate) fn render(
         titles.push_str(") rotate(-90)\">");
         titles.push_str(&label_svg(&left_title, 0.0, 0.0, "", None));
         titles.push_str("</g>");
+    }
+    if right_title.height > 0.0 {
+        if horizontal {
+            titles.push_str(&label_svg(
+                &right_title,
+                left + plot_width / 2.0,
+                top - above + right_title.height / 2.0,
+                "",
+                None,
+            ));
+        } else {
+            titles.push_str("<g transform=\"translate(");
+            push_num(&mut titles, right + beyond - right_title.height / 2.0);
+            titles.push(',');
+            push_num(&mut titles, top + plot_height / 2.0);
+            titles.push_str(") rotate(90)\">");
+            titles.push_str(&label_svg(&right_title, 0.0, 0.0, "", None));
+            titles.push_str("</g>");
+        }
     }
     titles.push_str(&label_svg(
         &bottom_title,
@@ -918,14 +1327,14 @@ pub(crate) fn render(
         legend_height += max(ROW, label.height + 6.0);
     }
     let mut ly = top + max(0.0, (plot_height - legend_height) / 2.0);
-    let lx = right + reach + LEGEND_GAP;
+    let lx = right + reach + beyond + LEGEND_GAP;
     for (index, label) in &legend {
         let row = max(ROW, label.height + 6.0);
         if ly + row > height {
             break;
         }
         let y = ly + row / 2.0;
-        let color = series_color(i64::try_from(*index).unwrap_or(i64::MAX));
+        let color = chart_color(*index, plots.len(), stacked || dual);
         let Some(plot) = plots.get(*index) else {
             continue;
         };
