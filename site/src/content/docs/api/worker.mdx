@@ -15,8 +15,8 @@ The Worker at `https://ondine.sh` reads the Mermaid source from the request and 
 ```txt
 GET /<payload>.svg?scheme=light|dark|auto
 GET /svg?source=<source>&scheme=light|dark|auto
-GET /<payload>.png
-GET /png?source=<source>
+GET /<payload>.png?size=full&scheme=light|dark
+GET /png?source=<source>&size=full&scheme=light|dark
 ```
 
 The Worker also accepts `HEAD`. Other methods return `405` with an `allow: GET, HEAD` header. Other paths return `404`.
@@ -52,6 +52,8 @@ The Mermaid source in the query of `/svg` or `/png`. Authors and agents that can
 
 Selects the color scheme of an SVG image. The default is `light`. The `auto` value follows `prefers-color-scheme`.
 
+A full-size PNG also accepts `dark`. Cards always draw the light scheme.
+
 ```html
 <!-- Shows the dark variant when GitHub uses a dark theme -->
 <picture>
@@ -61,6 +63,18 @@ Selects the color scheme of an SVG image. The default is `light`. The `auto` val
   />
   <img alt="Flow" src="https://ondine.sh/<payload>.svg?scheme=light" />
 </picture>
+```
+
+### size
+
+- **Type:** `'full'{:ts}`
+
+Draws a PNG at the diagram's own size instead of on a card. The image has two pixels per SVG unit and a background in the scheme's color. Diagrams over 8 megapixels at that density scale down to fit.
+
+```md
+<!-- Shows a wide diagram at full resolution on hosts that do not display SVG images -->
+
+![Flow](https://ondine.sh/<payload>.png?size=full)
 ```
 
 ## Response
@@ -74,6 +88,10 @@ The `.png` and `/png` forms draw the diagram on a 1200x630 card in the light sch
 
 ![Flow](https://ondine.sh/png?source=flowchart%20LR%0A%20%20A%20--%3E%20B)
 ```
+
+### Full-Size PNG
+
+The `size=full` form returns the diagram alone as `image/png`, with the same cache headers as a card.
 
 ### Success
 

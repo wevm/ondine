@@ -225,6 +225,29 @@ describe('fetch', () => {
     expect(invalid.headers.get('content-type')).toMatchInlineSnapshot(`"image/png"`)
   })
 
+  test('draws full-size PNG images at twice the diagram size', async () => {
+    const payload = encode('flowchart LR\n  A --> B')
+    const svg = await (await fetch(`${origin}/${payload}.svg`)).text()
+    const light = await fetch(`${origin}/${payload}.png?size=full`)
+    const dark = await fetch(
+      `${origin}/png?source=${encodeURIComponent('flowchart LR\n  A --> B')}&size=full&scheme=dark`,
+    )
+    const invalid = await fetch(`${origin}/${encode('not a diagram')}.png?size=full`)
+    const png = Buffer.from(await light.arrayBuffer())
+    const size = /width="(\d+)" height="(\d+)"/.exec(svg)
+
+    expect(light.headers.get('content-type')).toMatchInlineSnapshot(`"image/png"`)
+    // A PNG's IHDR chunk holds its width and height at bytes 16 through 23.
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([
+      Number(size?.[1]) * 2,
+      Number(size?.[2]) * 2,
+    ])
+    expect(dark.status).toMatchInlineSnapshot(`200`)
+    expect(Buffer.from(await dark.arrayBuffer()).equals(png)).toBe(false)
+    expect(invalid.status).toMatchInlineSnapshot(`400`)
+    expect(invalid.headers.get('content-type')).toMatchInlineSnapshot(`"image/png"`)
+  })
+
   test('answers link previewers on SVG addresses with the PNG card', async () => {
     const path = `/svg?source=${encodeURIComponent('flowchart LR\n  A --> B')}&scheme=dark`
     const twitter = await fetch(`${origin}${path}`, { headers: { 'user-agent': 'Twitterbot/1.0' } })
