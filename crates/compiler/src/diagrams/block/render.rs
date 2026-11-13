@@ -1079,6 +1079,7 @@ fn draw(model: &BlockDb, config: &Value, options: &RenderOptions, tight: bool) -
         if route.label.width > 0.0 {
             labels.push_str(&edge_label_svg(
                 id,
+                &[],
                 &route.label,
                 route.lx + ox,
                 route.ly + oy,

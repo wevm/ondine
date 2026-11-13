@@ -840,7 +840,7 @@ fn draw(model: &ArchitectureDb, config: &Value, options: &RenderOptions, tight: 
             max_x = max_x.max(x + w / 2.0);
             min_y = min_y.min(y - label.height / 2.0);
             max_y = max_y.max(y + label.height / 2.0);
-            labels_out.push_str(&edge_label_svg(&id, &label, x, y, "", None));
+            labels_out.push_str(&edge_label_svg(&id, &[], &label, x, y, "", None));
         }
     }
 

@@ -2,12 +2,14 @@
 //! same errors at the same tokens. Port of Pele's `src/diagrams/flowchart/parser.ts`.
 
 use std::borrow::Cow;
+use std::ops::Range;
 
 use super::db::{FlowDb, js_trim};
 use super::lexer::{Token, tokenize};
 use super::tokens::T;
 use super::types::{DocItem, FlowText, LabelType, LinkInfo};
 use crate::error::Error;
+use crate::lines::{self, Lines, Locator};
 use crate::util::chars::is_space;
 
 /// Tokens that continue an id.
@@ -95,6 +97,8 @@ const STATEMENT_START: &str = "'SEMI', 'NEWLINE', 'SPACE', 'EOF', 'subgraph', 'a
 struct Frame {
     collect: bool,
     id: Option<FlowText>,
+    /// The authored line of the `subgraph` keyword.
+    line: Option<u32>,
     list: Vec<DocItem>,
     /// Whether the title is the id itself, which Pele tests by object identity.
     same: bool,
@@ -104,44 +108,63 @@ struct Frame {
 struct Parser<'s, 'd> {
     db: &'d mut FlowDb,
     i: usize,
+    /// Finds the authored lines of `src`, when the host asks for them.
+    locator: Option<Locator>,
     src: &'s str,
     tokens: Vec<Token<'s>>,
 }
 
 /// Mermaid trims whitespace between a closing brace and the end of its line before parsing:
-/// `source.replace(/}\s*\n/g, '}\n')`.
-fn trim_brace_lines(source: &str) -> Cow<'_, str> {
+/// `source.replace(/}\s*\n/g, '}\n')`. Returns the ranges of `source` that removes, in order.
+fn brace_runs(source: &str) -> Vec<Range<usize>> {
+    let mut removed = Vec::new();
     if !source.contains('}') {
-        return Cow::Borrowed(source);
+        return removed;
     }
 
-    let mut out = String::with_capacity(source.len());
-    let mut rest = source;
-    while let Some(at) = rest.find('}') {
-        out.push_str(rest.get(..=at).unwrap_or(""));
-        let tail = rest.get(at + 1..).unwrap_or("");
+    let mut from = 0;
+    while let Some(at) = source.get(from..).and_then(|rest| rest.find('}')) {
+        let tail_start = from + at + 1;
+        let tail = source.get(tail_start..).unwrap_or("");
         let run = tail
             .char_indices()
             .find(|&(_, c)| !is_space(u32::from(c)))
             .map_or(tail.len(), |(end, _)| end);
         match tail.get(..run).and_then(|space| space.rfind('\n')) {
             Some(newline) => {
-                out.push('\n');
-                rest = tail.get(newline + 1..).unwrap_or("");
+                if newline > 0 {
+                    removed.push(tail_start..tail_start + newline);
+                }
+                from = tail_start + newline + 1;
             }
-            None => rest = tail,
+            None => from = tail_start,
         }
     }
-    out.push_str(rest);
-    Cow::Owned(out)
+    removed
 }
 
-/// Parses flowchart `source` into `db`.
-pub(crate) fn parse_flowchart(source: &str, db: &mut FlowDb) -> Result<(), Error> {
-    let src = trim_brace_lines(source);
+/// Parses flowchart `source` into `db`. `lines` maps `source` to authored lines.
+pub(crate) fn parse_flowchart(
+    source: &str,
+    lines: Option<&Lines>,
+    db: &mut FlowDb,
+) -> Result<(), Error> {
+    let removed = brace_runs(source);
+    let src = if removed.is_empty() {
+        Cow::Borrowed(source)
+    } else {
+        Cow::Owned(lines::without(source, &removed))
+    };
+    let locator = lines.map(|lines| {
+        let mut lines = lines.clone();
+        lines.remove(source, &removed);
+        lines.locate(&src)
+    });
+
     let mut parser = Parser {
         db,
         i: 0,
+        locator,
         src: &src,
         tokens: tokenize(&src),
     };
@@ -166,6 +189,18 @@ impl Parser<'_, '_> {
         let text = self.text_at(self.i).to_owned();
         self.i += 1;
         text
+    }
+
+    /// Makes the authored line of the current token the line that later model updates record,
+    /// and returns it.
+    fn mark(&mut self) -> Option<u32> {
+        let locator = self.locator.as_ref()?;
+        let start = self
+            .tokens
+            .get(self.i)
+            .map_or(self.src.len(), |token| token.start);
+        self.db.line = Some(locator.line(start));
+        self.db.line
     }
 
     #[cold]
@@ -301,6 +336,7 @@ impl Parser<'_, '_> {
     }
 
     fn vertex(&mut self) -> Result<String, Error> {
+        self.mark();
         let id = self.id_string()?;
         let open = self.kind();
         match open {
@@ -499,12 +535,15 @@ impl Parser<'_, '_> {
             if !matches!(self.kind(), T::Link | T::StartLink | T::LinkId) {
                 return Ok(nodes);
             }
+            let line = self.mark();
             let info = self.link()?;
             let (next, data) = self.node()?;
             if let (Some(data), Some(last)) = (&data, next.last()) {
                 self.db
                     .add_vertex(last, None, None, None, None, Some(data))?;
             }
+            // An edge belongs to the line of its arrow, which may differ from its end node's.
+            self.db.line = line;
             self.db.add_link(&stmt, &next, &info)?;
 
             let mut joined = next.clone();
@@ -629,12 +668,14 @@ impl Parser<'_, '_> {
     }
 
     fn subgraph_header(&mut self) -> Result<Frame, Error> {
+        let line = self.mark();
         self.i += 1;
         if matches!(self.kind(), T::Newline | T::Semi | T::Eof) {
             self.i += 1;
             return Ok(Frame {
                 collect: false,
                 id: None,
+                line,
                 list: Vec::new(),
                 same: false,
                 title: None,
@@ -659,6 +700,7 @@ impl Parser<'_, '_> {
         Ok(Frame {
             collect: false,
             id: Some(id),
+            line,
             list: Vec::new(),
             same,
             title: Some(title),
@@ -667,6 +709,7 @@ impl Parser<'_, '_> {
 
     /// One statement, or `None` for statements that add nothing to a subgraph body.
     fn statement(&mut self) -> Result<Option<DocItem>, Error> {
+        self.mark();
         let t = self.kind();
         match t {
             T::Style => {
@@ -766,6 +809,8 @@ impl Parser<'_, '_> {
                     break;
                 };
                 self.i += 1;
+                // A subgraph belongs to the line of its header, not of its `end`.
+                self.db.line = frame.line;
                 let id = self.db.add_subgraph(
                     frame.id.as_ref(),
                     &list,

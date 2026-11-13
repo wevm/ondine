@@ -85,6 +85,7 @@ pub(crate) mod wardley;
 pub(crate) mod xychart;
 
 use crate::error::Error;
+use crate::lines::Lines;
 use crate::svg::root::RenderOptions;
 use crate::util::url::{LinkInfo, UrlOptions};
 use crate::yaml::Value;
@@ -95,6 +96,8 @@ pub(crate) struct Input<'a> {
     pub(crate) config: &'a Value,
     /// Front matter lines removed before `source`, for types that report source positions.
     pub(crate) line_offset: u32,
+    /// The authored lines of `source`, when the host asks for `data-lines`.
+    pub(crate) lines: Option<&'a Lines>,
     /// The most edges a flowchart-like diagram may have.
     pub(crate) max_edges: usize,
     /// Preprocessed, entity-encoded source ending in a newline. It keeps `%%` comment lines

@@ -42,6 +42,9 @@ pub(crate) struct FlowDb {
     pub(crate) direction: Option<String>,
     /// Edges, in insertion order.
     pub(crate) edges: Vec<FlowEdge>,
+    /// The authored line of the statement being parsed, which the elements it names record.
+    /// `None` unless the host asks for source lines.
+    pub(crate) line: Option<u32>,
     /// Nodes, in insertion order.
     pub(crate) nodes: Vec<FlowNode>,
     /// Subgraphs, in the order they close.
@@ -68,6 +71,13 @@ fn label_type(r#type: Option<&str>) -> LabelType {
         Some("string") => LabelType::String,
         Some("text") => LabelType::Text,
         _ => LabelType::Markdown,
+    }
+}
+
+/// Adds `line`, the line of the statement being parsed, to an element's `lines`.
+fn record(lines: &mut Vec<u32>, line: Option<u32>) {
+    if let Some(line) = line {
+        crate::lines::mark(lines, line);
     }
 }
 
@@ -200,10 +210,12 @@ impl FlowDb {
             }
         }
 
+        let line = self.line;
         if let Some(&index) = self.subgraph_lookup.get(id)
             && let Some(doc) = &doc
         {
             if let Some(subgraph) = self.subgraphs.get_mut(index) {
+                record(&mut subgraph.lines, line);
                 let merged = subgraph.metadata.get_or_insert_with(Vec::new);
                 for (key, value) in doc {
                     yaml::set(merged, key.clone(), value.clone());
@@ -213,6 +225,9 @@ impl FlowDb {
         }
 
         if let Some(&index) = self.edge_by_id.get(id) {
+            if let Some(edge) = self.edges.get_mut(index) {
+                record(&mut edge.lines, line);
+            }
             if let (Some(edge), Some(doc)) = (self.edges.get_mut(index), &doc) {
                 if let Some(value) = get(doc, "animate") {
                     edge.animate = Some(value.clone());
@@ -240,6 +255,7 @@ impl FlowDb {
                 id: id.to_owned(),
                 img: None,
                 label_type: LabelType::Text,
+                lines: Vec::new(),
                 link: None,
                 link_target: None,
                 pos: None,
@@ -252,6 +268,7 @@ impl FlowDb {
         let Some(vertex) = self.node_mut(id) else {
             return Ok(());
         };
+        record(&mut vertex.lines, line);
 
         if let Some(text) = text {
             vertex.label_type = text.r#type;
@@ -360,6 +377,7 @@ impl FlowDb {
             is_user_defined_id: false,
             label_type: LabelType::Text,
             length: None,
+            lines: self.line.into_iter().collect(),
             start: start.to_owned(),
             stroke: Some(info.stroke.to_owned()),
             style: None,
@@ -444,7 +462,10 @@ impl FlowDb {
             if pos == "default" {
                 self.default_interpolate = Some(interpolate.to_owned());
             } else {
-                self.edge_at(pos)?.interpolate = Some(Value::String(interpolate.to_owned()));
+                let line = self.line;
+                let edge = self.edge_at(pos)?;
+                edge.interpolate = Some(Value::String(interpolate.to_owned()));
+                record(&mut edge.lines, line);
             }
         }
         Ok(())
@@ -468,7 +489,10 @@ impl FlowDb {
             if pos == "default" {
                 self.default_edge_style = Some(style.clone());
             } else {
-                self.edge_at(pos)?.style = Some(style.clone());
+                let line = self.line;
+                let edge = self.edge_at(pos)?;
+                edge.style = Some(style.clone());
+                record(&mut edge.lines, line);
             }
         }
         Ok(())
@@ -549,12 +573,15 @@ impl FlowDb {
 
     /// Adds a class to the nodes, edges, and subgraphs named in a comma-separated list.
     pub(crate) fn set_class(&mut self, ids: &str, class_name: &str) {
+        let line = self.line;
         for id in ids.split(',') {
             if let Some(node) = self.node_mut(id) {
                 node.classes.push(class_name.to_owned());
+                record(&mut node.lines, line);
             }
             if let Some(edge) = self.edge_by_id.get(id).and_then(|&i| self.edges.get_mut(i)) {
                 edge.classes.push(class_name.to_owned());
+                record(&mut edge.lines, line);
             }
             if let Some(subgraph) = self
                 .subgraph_lookup
@@ -562,6 +589,7 @@ impl FlowDb {
                 .and_then(|&i| self.subgraphs.get_mut(i))
             {
                 subgraph.classes.push(class_name.to_owned());
+                record(&mut subgraph.lines, line);
             }
         }
     }
@@ -679,6 +707,7 @@ impl FlowDb {
         if let Some(&index) = self.subgraph_lookup.get(&id) {
             if let Some(existing) = self.subgraphs.get_mut(index) {
                 existing.nodes.extend(nodes);
+                record(&mut existing.lines, self.line);
             }
         } else {
             self.subgraph_lookup
@@ -688,6 +717,7 @@ impl FlowDb {
                 dir,
                 id: id.clone(),
                 label_type: label_type(title_text.map(|title| title.r#type.as_str())),
+                lines: self.line.into_iter().collect(),
                 metadata: None,
                 nodes,
                 title: js_trim(title).to_owned(),

@@ -9,6 +9,7 @@
 
 mod detect;
 mod error;
+mod lines;
 #[cfg(feature = "model")]
 mod model;
 mod preprocess;
@@ -104,7 +105,7 @@ pub fn render(source: &str, options: &str, now: f64) -> Result<Rendered, Error> 
         return Err(Error::new(Code::Limit, message));
     }
 
-    let pre = preprocess::preprocess(source)?;
+    let pre = preprocess::preprocess(source, options.source_lines == Some(true))?;
     let Some(r#type) = detect::detect(&pre.text) else {
         return Err(Error::new(
             Code::UnsupportedDiagram,
@@ -137,12 +138,13 @@ pub fn render(source: &str, options: &str, now: f64) -> Result<Rendered, Error> 
     );
     options.responsive = Some(options.responsive.unwrap_or(!fixed));
 
-    let mut source = preprocess::encode_entities(if diagram.keep_comments {
-        &pre.with_comments
+    let (text, lines) = if diagram.keep_comments {
+        (&pre.with_comments, pre.lines_with_comments.as_ref())
     } else {
-        &pre.text
-    })
-    .into_owned();
+        (&pre.text, pre.lines.as_ref())
+    };
+    // Encoding entities keeps every line break, so `lines` still fits the encoded text.
+    let mut source = preprocess::encode_entities(text).into_owned();
     source.push('\n');
 
     let max_edges = options.max_edges.unwrap_or(DEFAULT_MAX_EDGES);
@@ -155,6 +157,7 @@ pub fn render(source: &str, options: &str, now: f64) -> Result<Rendered, Error> 
     let input = diagrams::Input {
         config: &config,
         line_offset: pre.line_offset,
+        lines,
         max_edges,
         source: &source,
         title: pre.title.as_deref(),
@@ -287,6 +290,7 @@ fn options_from_json(json: &str) -> Result<svg::root::RenderOptions, Error> {
             "outputLimit" => options.output_limit = number(value),
             "padding" => options.padding = number(value),
             "responsive" => options.responsive = boolean(value),
+            "sourceLines" => options.source_lines = boolean(value),
             _ => {}
         }
     }

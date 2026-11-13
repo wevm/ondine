@@ -56,6 +56,9 @@ pub(crate) struct FlowNode {
     pub(crate) img: Option<String>,
     /// How the label is written.
     pub(crate) label_type: LabelType,
+    /// The authored lines of the statements that name the node, ascending. Empty unless the host
+    /// asks for source lines. Pele has no such field.
+    pub(crate) lines: Vec<u32>,
     /// The sanitized click target.
     pub(crate) link: Option<String>,
     /// The click target window.
@@ -93,6 +96,10 @@ pub(crate) struct FlowEdge {
     pub(crate) label_type: LabelType,
     /// The extra rank span, capped at 10.
     pub(crate) length: Option<i32>,
+    /// The authored lines of the statements that name the edge, ascending: its arrow, and any
+    /// `linkStyle`, `class`, or `@{ ... }` for it. Empty unless the host asks for source lines.
+    /// Pele has no such field.
+    pub(crate) lines: Vec<u32>,
     /// The source node id.
     pub(crate) start: String,
     /// `normal`, `thick`, `dotted`, `invisible`, or `INVALID`.
@@ -127,6 +134,9 @@ pub(crate) struct FlowSubgraph {
     pub(crate) id: String,
     /// How the title is written.
     pub(crate) label_type: LabelType,
+    /// The authored lines of its `subgraph` headers and of the statements that name it,
+    /// ascending. Empty unless the host asks for source lines. Pele has no such field.
+    pub(crate) lines: Vec<u32>,
     /// Shape data merged across statements, in insertion order.
     pub(crate) metadata: Option<Vec<(String, Value)>>,
     /// Member node and subgraph ids.

@@ -652,7 +652,15 @@ fn draw(model: &RequirementDb, options: &RenderOptions, turned: bool) -> Rendere
             edges_out.push_str(&arrow_marker(path.ex, path.ey, path.edx, path.edy));
         }
         edges_out.push_str("</g>");
-        labels_out.push_str(&edge_label_svg(&edge.id, label, label_x, label_y, "", None));
+        labels_out.push_str(&edge_label_svg(
+            &edge.id,
+            &[],
+            label,
+            label_x,
+            label_y,
+            "",
+            None,
+        ));
     }
 
     let mut content = label_svg(

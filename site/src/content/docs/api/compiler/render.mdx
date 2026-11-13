@@ -191,6 +191,30 @@ import { render } from 'ondine/compiler'
 render('flowchart LR\n  A --> B', { responsive: false })
 ```
 
+### options.sourceLines
+
+- **Type:** `boolean{:ts}`
+- **Default:** `false{:ts}`
+
+If this option is `true`, each node, edge, edge label, and subgraph has a `data-lines` attribute. The attribute lists the one-based source lines that name the element, separated by spaces. The numbers count every line of the source, including front matter, directives, and comments.
+
+```ts
+import { render } from 'ondine/compiler'
+
+// Emits <g class="ondine-node ondine-shape-rect" data-id="A" data-lines="2 3" …>
+render('flowchart LR\n  A --> B\n  style A stroke-width:4px', { sourceLines: true })
+```
+
+Because the list is separated by spaces, the attribute selector `[data-lines~="3"]` matches every element that line 3 names.
+
+```ts
+// Selects the elements of a mounted diagram that line 3 names
+document.querySelectorAll('.ondine [data-lines~="3"]')
+```
+
+> [!NOTE]
+> Only flowchart and swimlane diagrams emit `data-lines` so far. Other diagram types ignore this option.
+
 ## Returns
 
 ### height

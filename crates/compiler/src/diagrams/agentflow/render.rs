@@ -721,7 +721,7 @@ fn draw(
 
         if label.width > 0.0 {
             let attrs = style.as_ref().map_or("", |style| style.text.as_str());
-            labels_out.push_str(&edge_label_svg(&edge.id, label, x, y, attrs, None));
+            labels_out.push_str(&edge_label_svg(&edge.id, &[], label, x, y, attrs, None));
         }
     };
 

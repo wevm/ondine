@@ -1081,7 +1081,13 @@ fn draw(model: &UsecaseModel, config: &Value, options: &RenderOptions, turned: b
                 attrs.push_str(&style.text);
             }
             labels_out.push_str(&edge_label_svg(
-                &edge.id, label, ce.label_x, ce.label_y, &attrs, None,
+                &edge.id,
+                &[],
+                label,
+                ce.label_x,
+                ce.label_y,
+                &attrs,
+                None,
             ));
         }
     }

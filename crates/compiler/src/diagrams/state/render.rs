@@ -1199,6 +1199,7 @@ fn draw(
         {
             labels_out.push_str(&edge_label_svg(
                 &edge.id,
+                &[],
                 label,
                 ce.label_x + pad,
                 ce.label_y + pad,

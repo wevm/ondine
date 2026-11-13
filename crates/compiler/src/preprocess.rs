@@ -2,8 +2,10 @@
 //! directives, and comments. Port of Pele's `src/preprocess.ts`.
 
 use std::borrow::Cow;
+use std::ops::Range;
 
 use crate::error::{Code, Error};
+use crate::lines::{self, Lines};
 use crate::util::chars::{has, is_line_end, is_space, is_word};
 use crate::yaml::{self, Value};
 
@@ -17,6 +19,10 @@ pub(crate) struct Preprocessed {
     pub(crate) config: Config,
     /// The number of front matter lines before `with_comments`.
     pub(crate) line_offset: u32,
+    /// The authored lines of `text`, when they were asked for.
+    pub(crate) lines: Option<Lines>,
+    /// The authored lines of `with_comments`, when they were asked for.
+    pub(crate) lines_with_comments: Option<Lines>,
     /// The diagram text without comment lines, trimmed at the start.
     pub(crate) text: String,
     /// The front matter title.
@@ -42,17 +48,16 @@ fn word(c: char) -> bool {
 /// Removes comment lines (`%%` not followed by `{`) and leading whitespace.
 pub(crate) fn cleanup_comments(text: &str) -> String {
     let stripped = if has(text, "%%") {
-        Cow::Owned(remove_comments(text))
+        Cow::Owned(lines::without(text, &comment_ranges(text)))
     } else {
         Cow::Borrowed(text)
     };
     stripped.trim_start_matches(space).to_owned()
 }
 
-// `text.replace(/^\s*%%(?!{)[^\n]+\n?/gm, '')`.
-fn remove_comments(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut last = 0;
+// The ranges `text.replace(/^\s*%%(?!{)[^\n]+\n?/gm, '')` removes, in order.
+fn comment_ranges(text: &str) -> Vec<Range<usize>> {
+    let mut removed = Vec::new();
     let mut p = 0;
     loop {
         let line_start = p == 0
@@ -62,8 +67,7 @@ fn remove_comments(text: &str) -> String {
                 .is_some_and(line_end);
         if line_start {
             if let Some(end) = comment_at(text, p) {
-                out.push_str(text.get(last..p).unwrap_or(""));
-                last = end;
+                removed.push(p..end);
                 p = end;
                 continue;
             }
@@ -81,8 +85,7 @@ fn remove_comments(text: &str) -> String {
         };
         p += offset + c.len_utf8();
     }
-    out.push_str(text.get(last..).unwrap_or(""));
-    out
+    removed
 }
 
 // The end of a comment matched at line start `p`. `\s*` cannot give back characters to `%%`, so
@@ -324,9 +327,10 @@ fn directive_at(s: &str, start: usize) -> Option<Directive<'_>> {
     })
 }
 
-fn directives(text: &str, config: &mut Config) -> String {
+// Reads directives into `config`, and returns `text` without them and the ranges they held.
+fn directives(text: &str, config: &mut Config) -> (String, Vec<Range<usize>>) {
     if !has(text, "%%{") {
-        return text.to_owned();
+        return (text.to_owned(), Vec::new());
     }
 
     let normalized = text
@@ -351,14 +355,13 @@ fn directives(text: &str, config: &mut Config) -> String {
         }
     }
 
-    let mut out = String::with_capacity(text.len());
+    let mut removed = Vec::new();
     let mut last = 0;
     while let Some(directive) = find_directive(text, last) {
-        out.push_str(text.get(last..directive.start).unwrap_or(""));
+        removed.push(directive.start..directive.end);
         last = directive.end;
     }
-    out.push_str(text.get(last..).unwrap_or(""));
-    out
+    (lines::without(text, &removed), removed)
 }
 
 /// Deepest nesting `JSON.parse` reads here. V8 has no fixed limit, but a deeper directive is
@@ -579,8 +582,9 @@ fn push_single_quoted(out: &mut String, attrs: &str) {
 }
 
 /// Normalizes line endings and attribute quotes, reads front matter and directives into the title
-/// and config, and removes comments.
-pub(crate) fn preprocess(source: &str) -> Result<Preprocessed, Error> {
+/// and config, and removes comments. When `track` is set, also maps the lines of the results to
+/// the lines of `source`.
+pub(crate) fn preprocess(source: &str, track: bool) -> Result<Preprocessed, Error> {
     let mut text = if source.contains('\r') {
         let mut normalized = String::with_capacity(source.len());
         let mut chars = source.chars().peekable();
@@ -611,6 +615,8 @@ pub(crate) fn preprocess(source: &str) -> Result<Preprocessed, Error> {
         text = quoted;
     }
 
+    // Line endings are one `\n` each by now, and quoting attributes adds no line breaks.
+    let mut lines = track.then(|| Lines::new(&text));
     let mut config = Config::new();
     let mut title = None;
     let mut line_offset = 0;
@@ -665,14 +671,39 @@ pub(crate) fn preprocess(source: &str) -> Result<Preprocessed, Error> {
 
         let head = text.get(..front.length).unwrap_or("");
         line_offset = u32::try_from(head.matches('\n').count()).unwrap_or(u32::MAX);
+        if let Some(lines) = &mut lines {
+            lines.remove(&text, std::slice::from_ref(&(0..front.length)));
+        }
         text = text.get(front.length..).unwrap_or("").to_owned();
     }
 
-    let with_comments = directives(&text, &mut config);
+    let (with_comments, removed) = directives(&text, &mut config);
+    let lines_with_comments = lines.map(|mut lines| {
+        lines.remove(&text, &removed);
+        lines
+    });
+    let text = cleanup_comments(&with_comments);
+    let lines = lines_with_comments.as_ref().map(|lines| {
+        let mut lines = lines.clone();
+        let removed = if has(&with_comments, "%%") {
+            comment_ranges(&with_comments)
+        } else {
+            Vec::new()
+        };
+        let stripped = lines::without(&with_comments, &removed);
+        lines.remove(&with_comments, &removed);
+        // `cleanup_comments` trims the start of what the comments leave.
+        let trimmed = 0..stripped.len().saturating_sub(text.len());
+        lines.remove(&stripped, std::slice::from_ref(&trimmed));
+        lines
+    });
+
     Ok(Preprocessed {
         config,
         line_offset,
-        text: cleanup_comments(&with_comments),
+        lines,
+        lines_with_comments,
+        text,
         title,
         with_comments,
     })
@@ -786,7 +817,7 @@ mod tests {
     use crate::yaml::tests::{push_json, push_json_string};
 
     fn summary(source: &str) -> String {
-        match preprocess(source) {
+        match preprocess(source, false) {
             Ok(result) => {
                 let mut out = String::from("[");
                 push_json_string(&mut out, &result.text);
@@ -890,7 +921,7 @@ mod tests {
         let expected = CORPUS_EXPECTED.split('\n').collect::<Vec<_>>();
         assert_eq!(sources.len(), expected.len());
         for (source, expected) in sources.iter().zip(expected) {
-            let actual = match preprocess(source) {
+            let actual = match preprocess(source, false) {
                 Ok(result) => {
                     let mut config = String::new();
                     push_json(&mut config, &Value::Object(result.config));
