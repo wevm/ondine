@@ -129,6 +129,11 @@ export declare namespace render {
     readonly padding?: number | undefined
     /** Whether the SVG scales to its container. Defaults to `true`. */
     readonly responsive?: boolean | undefined
+    /**
+     * Whether nodes, edges, and subgraphs carry the one-based source lines that name them in a
+     * space-separated `data-lines` attribute. Flowchart and swimlane diagrams only. Defaults to `false`.
+     */
+    readonly sourceLines?: boolean | undefined
   }
 
   /** A rendered diagram. */

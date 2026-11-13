@@ -37,6 +37,8 @@ pub(crate) struct GraphNode {
     pub(crate) label: Option<String>,
     /// How the label is written.
     pub(crate) label_type: LabelType,
+    /// Authored source lines, ascending, for `data-lines`.
+    pub(crate) lines: Vec<u32>,
     /// Link address.
     pub(crate) link: Option<String>,
     /// Link target.
@@ -72,6 +74,8 @@ pub(crate) struct GraphEdge {
     pub(crate) label: String,
     /// How the label is written.
     pub(crate) label_type: LabelType,
+    /// Authored source lines, ascending, for `data-lines`.
+    pub(crate) lines: Vec<u32>,
     /// Least rank span.
     pub(crate) minlen: Option<i32>,
     /// Tail node id.
@@ -236,6 +240,7 @@ pub(crate) fn build(model: &FlowDb, default_curve: Option<&str>) -> FlowGraph {
             is_group: !collapsed,
             label: Some(sg.title.clone()),
             label_type: sg.label_type,
+            lines: sg.lines.clone(),
             link: None,
             link_target: None,
             parent_id: parent_of.get(sg.id.as_str()).map(|id| String::from(*id)),
@@ -257,6 +262,10 @@ pub(crate) fn build(model: &FlowDb, default_curve: Option<&str>) -> FlowGraph {
             node.css_styles.clone_from(&vertex.styles);
             node.css_compiled_styles = compiled(&mut vertex.classes.iter().map(String::as_str));
             node.css_classes = vertex.classes.join(" ");
+            // Statements that name a subgraph as a node also name the group drawn for it.
+            for &line in &vertex.lines {
+                crate::lines::mark(&mut node.lines, line);
+            }
             continue;
         }
 
@@ -281,6 +290,7 @@ pub(crate) fn build(model: &FlowDb, default_curve: Option<&str>) -> FlowGraph {
             is_group,
             label: vertex.text.clone(),
             label_type: vertex.label_type,
+            lines: vertex.lines.clone(),
             link: vertex.link.clone(),
             link_target: vertex.link_target.clone(),
             parent_id: parent_of
@@ -363,6 +373,7 @@ pub(crate) fn build(model: &FlowDb, default_curve: Option<&str>) -> FlowGraph {
             id,
             label: raw.text.clone(),
             label_type: raw.label_type,
+            lines: raw.lines.clone(),
             minlen: raw.length,
             start: String::from(start),
             style,

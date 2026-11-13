@@ -57,6 +57,112 @@ describe('render', () => {
     )
   })
 
+  test('marks flowchart elements with their source lines', () => {
+    // Front matter, the directive, the comment, and the blank lines after `}` are removed before
+    // parsing, but each element still names the lines of the source it was written on.
+    const source = [
+      '---',
+      'title: Lines',
+      '---',
+      '%%{init: {"flowchart": {"curve": "basis"}}}%%',
+      'flowchart LR',
+      '  %% A comment line',
+      '  A[Start] --> B{Check}',
+      '  B -->|yes| C@{ shape: rounded }',
+      '',
+      '',
+      '  subgraph S [Group]',
+      '    C --> D',
+      '  end',
+      '  B e1@--> E',
+      '  e1@{ animate: true }',
+      '  style A fill:#fff',
+      '  class D,S warm',
+      '  click E "https://example.com"',
+      '  linkStyle 0 stroke:#000',
+    ].join('\n')
+
+    const result = render(source, { sourceLines: true })
+
+    expect(lines(result.svg)).toMatchInlineSnapshot(`
+      [
+        "ondine-cluster S: 11 17",
+        "ondine-edge L_A_B_0: 7 19",
+        "ondine-edge L_B_C_0: 8",
+        "ondine-edge L_C_D_0: 12",
+        "ondine-edge e1: 14 15",
+        "ondine-edge-label L_B_C_0: 8",
+        "ondine-node A: 7 16",
+        "ondine-node B: 7 8 14",
+        "ondine-node C: 8 12",
+        "ondine-node D: 12 17",
+        "ondine-node E: 14 18",
+      ]
+    `)
+  })
+
+  test('marks flowchart elements with their lines in CRLF source', () => {
+    // A directive over three lines, a group of edges on one line, and a label over two lines.
+    const source = [
+      '%%{init: {',
+      '  "theme": "dark"',
+      '}}%%',
+      'flowchart TB',
+      '  A & B --> C',
+      '  D["`one',
+      '  two`"] --> A',
+    ].join('\r\n')
+
+    const result = render(source, { sourceLines: true })
+
+    expect(lines(result.svg)).toMatchInlineSnapshot(`
+      [
+        "ondine-edge L_A_C_0: 5",
+        "ondine-edge L_B_C_0: 5",
+        "ondine-edge L_D_A_0: 7",
+        "ondine-node A: 5 7",
+        "ondine-node B: 5",
+        "ondine-node C: 5",
+        "ondine-node D: 6",
+      ]
+    `)
+  })
+
+  test('marks swimlane lanes with their source lines', () => {
+    // A lane names the line of its `subgraph` header.
+    const source = [
+      'swimlane-beta LR',
+      '  subgraph L1 [Lane one]',
+      '    A --> B',
+      '  end',
+      '  subgraph L2 [Lane two]',
+      '    C',
+      '  end',
+      '  B --> C',
+    ].join('\n')
+
+    const result = render(source, { sourceLines: true })
+
+    expect(lines(result.svg)).toMatchInlineSnapshot(`
+      [
+        "ondine-cluster L2: 5",
+        "ondine-cluster L1: 2",
+        "ondine-edge L_A_B_0: 3",
+        "ondine-edge L_B_C_0: 8",
+        "ondine-node A: 3",
+        "ondine-node B: 3 8",
+        "ondine-node C: 6 8",
+      ]
+    `)
+  })
+
+  test('leaves out source lines by default', () => {
+    // Output without the option stays byte for byte as before.
+    const result = render('flowchart LR\n  A --> B')
+
+    expect(result.svg.includes('data-lines')).toMatchInlineSnapshot(`false`)
+  })
+
   test('rejects text without a diagram type', () => {
     expect(() => render('not a diagram')).toThrowErrorMatchingInlineSnapshot(
       `[Render.RenderError: No diagram type detected for the given text.]`,
@@ -77,3 +183,10 @@ describe('create', () => {
     )
   })
 })
+
+/** Lists each element that has a `data-id` as its first class, its id, and its `data-lines`. */
+function lines(svg: string): readonly string[] {
+  return [
+    ...svg.matchAll(/<g class="([^" ]*)[^"]*" data-id="([^"]*)"(?: data-lines="([^"]*)")?/g),
+  ].map((match) => `${match[1]} ${match[2]}: ${match[3] ?? ''}`)
+}

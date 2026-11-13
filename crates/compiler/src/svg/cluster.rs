@@ -80,7 +80,7 @@ pub(crate) fn title_crossed(c: &CNode, width: f64, x: f64, crossings: &Crossings
 /// A title that an edge runs through, drawn over the edges: the text on an outline in the color
 /// of the cluster behind it, so only the line is seen to stop short of the letters. `nodes` and
 /// `index` find how many clusters deep the title is, each of which tints the background. `id` is
-/// written as given.
+/// written as given, and `lines` are the cluster's authored source lines, if any.
 #[expect(clippy::too_many_arguments, reason = "mirrors Pele's struckTitle")]
 pub(crate) fn struck_title(
     label: &Label,
@@ -88,6 +88,7 @@ pub(crate) fn struck_title(
     y: f64,
     attrs: &str,
     id: &str,
+    lines: &[u32],
     nodes: &[CNode],
     index: usize,
     icons: Option<IconResolver<'_>>,
@@ -108,7 +109,9 @@ pub(crate) fn struck_title(
 
     let mut out = String::from("<g class=\"ondine-cluster-title\" data-id=\"");
     out.push_str(id);
-    out.push_str("\">");
+    out.push('"');
+    crate::lines::push_attribute(&mut out, lines);
+    out.push('>');
     out.push_str(&label_svg(label, x, y, &halo, icons));
     out.push_str(&label_svg(label, x, y, attrs, icons));
     out.push_str("</g>");
@@ -194,6 +197,7 @@ mod tests {
                     34.5,
                     " class=\"ct\"",
                     "sg&amp;1",
+                    &[],
                     &nodes,
                     i,
                     None

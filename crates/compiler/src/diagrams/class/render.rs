@@ -854,6 +854,7 @@ fn draw(
                     title_y,
                     title_attrs,
                     &id,
+                    &[],
                     &cnodes,
                     i,
                     None,
@@ -1032,6 +1033,7 @@ fn draw(
         if label.width > 0.0 {
             labels_out.push_str(&edge_label_svg(
                 &edge.id,
+                &[],
                 label,
                 ce.label_x + ox,
                 ce.label_y + oy,

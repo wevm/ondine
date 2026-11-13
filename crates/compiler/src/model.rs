@@ -34,7 +34,7 @@ pub fn model(source: &str, options: &str, now: f64) -> Result<Model, Error> {
         return Err(Error::new(Code::Limit, message));
     }
 
-    let pre = preprocess::preprocess(source)?;
+    let pre = preprocess::preprocess(source, false)?;
     let Some(r#type) = detect::detect(&pre.text) else {
         return Err(Error::new(
             Code::UnsupportedDiagram,
@@ -65,6 +65,7 @@ pub fn model(source: &str, options: &str, now: f64) -> Result<Model, Error> {
     let input = diagrams::Input {
         config: &config,
         line_offset: pre.line_offset,
+        lines: None,
         max_edges,
         source: &text,
         title: pre.title.as_deref(),
@@ -118,6 +119,7 @@ fn to_json(r#type: &str, input: &diagrams::Input<'_>, now: f64) -> Result<String
         #[cfg(any(feature = "flowchart", feature = "swimlane"))]
         "flowchart" | "swimlane" => diagrams::flowchart::to_json(&diagrams::flowchart::parse(
             source,
+            input.lines,
             input.config,
             title,
             Some(input.max_edges),

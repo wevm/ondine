@@ -46,6 +46,9 @@ pub(crate) struct RenderOptions {
     pub(crate) padding: Option<f64>,
     /// Whether the document scales down to its container. On unless `Some(false)`.
     pub(crate) responsive: Option<bool>,
+    /// Whether elements carry the authored lines that name them in `data-lines`. Off unless
+    /// `Some(true)`.
+    pub(crate) source_lines: Option<bool>,
 }
 
 /// A diagram's accessible title and description.

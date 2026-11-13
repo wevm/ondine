@@ -1000,7 +1000,7 @@ mod tests {
                 .unwrap_or_default()
                 .to_owned()
         };
-        let pre = crate::preprocess::preprocess(src).map_err(first_line)?;
+        let pre = crate::preprocess::preprocess(src, false).map_err(first_line)?;
         let mut source = crate::preprocess::encode_entities(&pre.with_comments).into_owned();
         source.push('\n');
         let config = Value::Object(pre.config);

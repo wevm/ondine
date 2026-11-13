@@ -936,7 +936,13 @@ fn draw(
         edges_out.push_str("</g>");
         if label.width > 0.0 {
             labels_out.push_str(&edge_label_svg(
-                &edge.id, label, ce.label_x, ce.label_y, "", None,
+                &edge.id,
+                &[],
+                label,
+                ce.label_x,
+                ce.label_y,
+                "",
+                None,
             ));
         }
     }

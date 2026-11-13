@@ -12,6 +12,7 @@ pub(crate) mod types;
 
 use super::{Diagram, Input, Rendered};
 use crate::error::Error;
+use crate::lines::Lines;
 use crate::svg::root::RenderOptions;
 use crate::util::url::UrlOptions;
 use crate::yaml::Value;
@@ -30,6 +31,7 @@ fn render_input(
 ) -> Result<Rendered, Error> {
     let db = parse(
         input.source,
+        input.lines,
         input.config,
         input.title,
         Some(input.max_edges),
@@ -40,7 +42,8 @@ fn render_input(
 /// The parsed flowchart model: Pele's `FlowDb`.
 pub(crate) use db::FlowDb as Model;
 
-/// Parses preprocessed flowchart `source`, as Pele's `flowchart.parse` does. `config` is the
+/// Parses preprocessed flowchart `source`, as Pele's `flowchart.parse` does. `lines` maps
+/// `source` to authored lines, which the nodes, edges, and subgraphs then record. `config` is the
 /// diagram configuration, of which `flowchart.inheritDir` is read. `title` comes from front
 /// matter. `max_edges` bounds the edge count.
 ///
@@ -50,6 +53,7 @@ pub(crate) use db::FlowDb as Model;
 /// out-of-range `linkStyle` indexes, and a limit error past `max_edges` edges.
 pub(crate) fn parse(
     source: &str,
+    lines: Option<&Lines>,
     config: &Value,
     title: Option<&str>,
     max_edges: Option<usize>,
@@ -65,7 +69,7 @@ pub(crate) fn parse(
     if let Some(title) = title.filter(|title| !title.is_empty()) {
         db.title = Some(title.to_owned());
     }
-    parser::parse_flowchart(source, &mut db)?;
+    parser::parse_flowchart(source, lines, &mut db)?;
     Ok(db)
 }
 
@@ -618,7 +622,7 @@ mod tests {
             reason = "test data"
         )]
         let max_edges = case.num("maxEdges").map(|n| n as usize);
-        match parse(input, &config, case.str("title"), max_edges) {
+        match parse(input, None, &config, case.str("title"), max_edges) {
             Ok(model) => {
                 for subgraph in &model.subgraphs {
                     assert_eq!(model.subgraph(&subgraph.id), Some(subgraph));

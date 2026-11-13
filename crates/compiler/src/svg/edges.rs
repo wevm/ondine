@@ -505,9 +505,10 @@ pub(crate) fn marker(r#type: &str, x: f64, y: f64, dx: f64, dy: f64, color: &str
 }
 
 /// An edge label centered on (`x`, `y`) on a patch of the background, so the line does not run
-/// through the text.
+/// through the text. `lines` are the edge's authored source lines, if any.
 pub(crate) fn edge_label_svg(
     id: &str,
+    lines: &[u32],
     label: &Label,
     x: f64,
     y: f64,
@@ -518,7 +519,9 @@ pub(crate) fn edge_label_svg(
     let h = label.height;
     let mut out = String::from("<g class=\"ondine-edge-label\" data-id=\"");
     out.push_str(&esc_text(id));
-    out.push_str("\"><rect x=\"");
+    out.push('"');
+    crate::lines::push_attribute(&mut out, lines);
+    out.push_str("><rect x=\"");
     push_num(&mut out, x - w / 2.0);
     out.push_str("\" y=\"");
     push_num(&mut out, y - h / 2.0);
@@ -4348,6 +4351,7 @@ mod tests {
         assert_eq!(
             edge_label_svg(
                 "L_A_B_0",
+                &[],
                 &label,
                 30.0,
                 40.0,
@@ -4365,7 +4369,7 @@ mod tests {
             None,
         );
         assert_eq!(
-            edge_label_svg("a&amp;\"b\"", &label, -3.333, 7.0, "", None),
+            edge_label_svg("a&amp;\"b\"", &[], &label, -3.333, 7.0, "", None),
             "<g class=\"ondine-edge-label\" data-id=\"a&amp;&quot;b&quot;\"><rect x=\"-57.73\" y=\"-14\" width=\"108.8\" height=\"42\" rx=\"3\" fill=\"var(--_bg)\"/><text text-anchor=\"middle\" xml:space=\"preserve\"><tspan x=\"-3.33\" y=\"1.4\" font-weight=\"var(--_w)\">two</tspan><tspan x=\"-3.33\" y=\"22.4\">lines &amp; more</tspan></text></g>"
         );
     }

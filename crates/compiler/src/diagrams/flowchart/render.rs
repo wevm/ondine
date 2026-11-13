@@ -10,6 +10,7 @@ use crate::layout::compound::{
     CEdge, CNode, CompoundResult, Dir, cnode, compound_layout, direction, shift_layout,
 };
 use crate::layout::layered::LayeredOptions;
+use crate::lines;
 use crate::svg::builder::{esc, esc_text, label_svg, push_num};
 use crate::svg::cluster::{
     Crossings, cluster_title_x, mark_crossings, struck_title, title_crossed,
@@ -36,9 +37,9 @@ const LOOP: f64 = 26.0;
 const SHAPE_ATTRS: &str = " fill=\"var(--_s)\" stroke=\"var(--_b)\"";
 const LINE_ATTRS: &str = " stroke=\"var(--_b)\"";
 
-/// Draws a top-level group from its box, title, style, classes, escaped id, and the diagram's
-/// direction.
-pub(crate) type DrawGroup = fn(&CNode, &Label, &ResolvedStyle, &str, &str, Dir) -> String;
+/// Draws a top-level group from its box, title, style, classes, escaped id, authored source
+/// lines, and the diagram's direction.
+pub(crate) type DrawGroup = fn(&CNode, &Label, &ResolvedStyle, &str, &str, &[u32], Dir) -> String;
 
 /// A diagram type that is a flowchart with a different layout, which may draw its top-level groups
 /// itself: Pele's `FlowVariant`.
@@ -431,6 +432,7 @@ fn draw(
                 &view.style,
                 &classes,
                 &id,
+                &node.lines,
                 root_dir,
             ));
             continue;
@@ -450,6 +452,7 @@ fn draw(
                     title_y,
                     &title_attrs,
                     &id,
+                    &node.lines,
                     &cnodes,
                     i,
                     None,
@@ -460,7 +463,9 @@ fn draw(
             clusters.push_str(&classes);
             clusters.push_str("\" data-id=\"");
             clusters.push_str(&id);
-            clusters.push_str("\"><rect x=\"");
+            clusters.push('"');
+            lines::push_attribute(&mut clusters, &node.lines);
+            clusters.push_str("><rect x=\"");
             push_num(&mut clusters, c.x - c.w / 2.0);
             clusters.push_str("\" y=\"");
             push_num(&mut clusters, c.y - c.h / 2.0);
@@ -568,7 +573,9 @@ fn draw(
         nodes_out.push_str(&classes);
         nodes_out.push_str("\" data-id=\"");
         nodes_out.push_str(&id);
-        nodes_out.push_str("\" transform=\"translate(");
+        nodes_out.push('"');
+        lines::push_attribute(&mut nodes_out, &node.lines);
+        nodes_out.push_str(" transform=\"translate(");
         push_num(&mut nodes_out, c.x);
         nodes_out.push(',');
         push_num(&mut nodes_out, c.y);
@@ -695,6 +702,7 @@ fn draw(
             edges_out.push_str("\" data-id=\"");
             edges_out.push_str(&esc_text(&edge.id));
             edges_out.push('"');
+            lines::push_attribute(&mut edges_out, &edge.lines);
             if let Some(style) = &style {
                 edges_out.push_str(&style.line);
             }
@@ -717,7 +725,13 @@ fn draw(
         {
             let attrs = style.as_ref().map_or("", |style| style.text.as_str());
             labels_out.push_str(&edge_label_svg(
-                &edge.id, label, ce.label_x, ce.label_y, attrs, None,
+                &edge.id,
+                &edge.lines,
+                label,
+                ce.label_x,
+                ce.label_y,
+                attrs,
+                None,
             ));
         }
     }

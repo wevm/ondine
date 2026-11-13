@@ -47,6 +47,7 @@ fn render_input(
 ) -> Result<Rendered, Error> {
     let db = super::flowchart::parse(
         input.source,
+        input.lines,
         input.config,
         input.title,
         Some(input.max_edges),
@@ -94,6 +95,7 @@ fn prepare(graph: &mut FlowGraph) {
         is_group: true,
         label: None,
         label_type: LabelType::Text,
+        lines: Vec::new(),
         link: None,
         link_target: None,
         parent_id: None,
@@ -126,6 +128,7 @@ fn draw_lane(
     style: &ResolvedStyle,
     classes: &str,
     id: &str,
+    lines: &[u32],
     dir: Dir,
 ) -> String {
     let left = c.x - c.w / 2.0;
@@ -145,7 +148,9 @@ fn draw_lane(
     out.push_str(classes);
     out.push_str("\" data-id=\"");
     out.push_str(id);
-    out.push_str("\"><rect x=\"");
+    out.push('"');
+    crate::lines::push_attribute(&mut out, lines);
+    out.push_str("><rect x=\"");
     push_num(&mut out, left);
     out.push_str("\" y=\"");
     push_num(&mut out, top);
@@ -208,7 +213,7 @@ mod tests {
                 reason = "test data"
             )]
             let max_edges = case.num("maxEdges").map(|n| n as usize);
-            let actual = parse(input, &config, case.str("title"), max_edges);
+            let actual = parse(input, None, &config, case.str("title"), max_edges);
             let same = match (&actual, case.get("error")) {
                 (Ok(_), None) => {
                     #[cfg(feature = "model")]
