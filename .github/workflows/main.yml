@@ -38,7 +38,7 @@ jobs:
 
       - name: PR or publish
         id: changesets
-        uses: wevm/actions/vendor/changesets/action/v2@31d7c5bc5f75932a367cf341ca5e26818eb9ec9d
+        uses: wevm/actions/vendor/changesets/action/v2@e0e99cfdac7c74eadc3ee7281015c0bf0496d6ac
         with:
           commit-message: 'chore: version packages'
           github-token: ${{ secrets.GITHUB_TOKEN }}
